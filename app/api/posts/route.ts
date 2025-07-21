@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb'
 import Post from '@/models/Post'
 import { getUserFromRequest } from '@/lib/auth'
 
+// Force dynamic rendering for this API route
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase()
@@ -49,7 +52,7 @@ export async function GET(request: NextRequest) {
     const total = await Post.countDocuments(query)
 
     return NextResponse.json({
-      posts: posts.map(post => ({
+      posts: posts.map((post: any) => ({
         ...post,
         upvoteCount: post.upvotes?.length || 0,
         downvoteCount: post.downvotes?.length || 0,

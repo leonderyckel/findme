@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb'
 import User from '@/models/User'
 import { getUserFromRequest } from '@/lib/auth'
 
+// Force dynamic rendering for this API route
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const userPayload = getUserFromRequest(request)

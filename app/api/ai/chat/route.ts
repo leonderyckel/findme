@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb'
 import Part from '@/models/Part'
 import { getUserFromRequest } from '@/lib/auth'
 
+// Force dynamic rendering for this API route
+export const dynamic = 'force-dynamic'
+
 // Mock AI responses for now - can be replaced with OpenAI integration later
 const mockResponses = {
   'cam chain tensioner': {

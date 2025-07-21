@@ -4,6 +4,9 @@ import Comment from '@/models/Comment'
 import Post from '@/models/Post'
 import { getUserFromRequest } from '@/lib/auth'
 
+// Force dynamic rendering for this API route
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -28,7 +31,7 @@ export async function GET(
       .lean()
 
     return NextResponse.json({
-      comments: comments.map(comment => ({
+      comments: comments.map((comment: any) => ({
         ...comment,
         upvoteCount: comment.upvotes?.length || 0,
         downvoteCount: comment.downvotes?.length || 0,
