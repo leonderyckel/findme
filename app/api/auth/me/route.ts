@@ -3,7 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb'
 import User from '@/models/User'
 import { getUserFromRequest } from '@/lib/auth'
 
-// Force dynamic rendering for this API route
+// Force dynamic rendering
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
@@ -12,14 +12,16 @@ export async function GET(request: NextRequest) {
     
     if (!userPayload) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
     await connectToDatabase()
-
+    
+    // Get full user data including admin status
     const user = await User.findById(userPayload.userId).select('-password')
+    
     if (!user) {
       return NextResponse.json(
         { error: 'User not found' },
@@ -35,9 +37,11 @@ export async function GET(request: NextRequest) {
         displayName: user.displayName,
         avatar: user.avatar,
         bio: user.bio,
-        isSeller: user.isSeller,
         isVerified: user.isVerified,
-        createdAt: user.createdAt
+        isSeller: user.isSeller,
+        isAdmin: user.isAdmin, // Include admin status
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       }
     })
   } catch (error) {

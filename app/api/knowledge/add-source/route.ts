@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/mongodb'
 import Knowledge from '@/models/Knowledge'
-import { getUserFromRequest } from '@/lib/auth'
+import { getUserFromRequest, requireAdmin } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -104,18 +104,21 @@ function extractVehicleInfo(url: string, title: string) {
   return vehicles
 }
 
-// POST - Add a reliable source with smart extraction
+// POST - Add a reliable source with smart extraction (admin only)
 export async function POST(request: NextRequest) {
   try {
     console.log('🔑 Starting source addition process...')
     
-    // Step 1: Authentication
-    const userPayload = getUserFromRequest(request)
-    if (!userPayload) {
-      console.log('❌ Unauthorized user')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Step 1: Check admin permissions
+    try {
+      await requireAdmin(request)
+      console.log('✅ Admin permissions verified')
+    } catch (error) {
+      console.log('❌ Admin access denied')
+      return NextResponse.json({ 
+        error: 'Admin access required. Only administrators can add knowledge sources to train the AI.' 
+      }, { status: 403 })
     }
-    console.log('✅ User authenticated:', userPayload.userId)
 
     // Step 2: Database connection
     console.log('🗄️ Connecting to database...')
@@ -164,7 +167,13 @@ export async function POST(request: NextRequest) {
     const finalCategory = smartCategorization(url, extraction.title, category)
     const vehicles = extractVehicleInfo(url, extraction.title)
     
-    // Step 7: Create knowledge entry
+    // Step 7: Get admin user info
+    const userPayload = getUserFromRequest(request)
+    if (!userPayload) {
+      return NextResponse.json({ error: 'Authentication error' }, { status: 401 })
+    }
+    
+    // Step 8: Create knowledge entry
     console.log('📚 Creating knowledge entry...')
     const knowledge = new Knowledge({
       title: extraction.title,
@@ -174,7 +183,8 @@ export async function POST(request: NextRequest) {
       tags: [
         extraction.success ? 'auto_extracted' : 'manual_entry',
         'web_source',
-        url.includes('youtube') ? 'video' : 'article'
+        url.includes('youtube') ? 'video' : 'article',
+        'admin_added'
       ],
       applicableVehicles: vehicles,
       sources: [{
@@ -194,7 +204,7 @@ export async function POST(request: NextRequest) {
       auto_generated: extraction.success,
       confidence_score: extraction.success ? reliability_score / 10 : (reliability_score - 2) / 10,
       created_by: userPayload.userId,
-      status: reliability_score >= 7 ? 'approved' : 'pending_review'
+      status: 'approved' // Auto-approve admin entries
     })
 
     console.log('💾 Saving knowledge entry...')

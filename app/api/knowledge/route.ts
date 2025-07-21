@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/mongodb'
 import Knowledge from '@/models/Knowledge'
-import { getUserFromRequest } from '@/lib/auth'
+import { getUserFromRequest, requireAdmin } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-// GET - Search knowledge base
+// GET - Search knowledge base (admin only)
 export async function GET(request: NextRequest) {
   try {
-    const userPayload = getUserFromRequest(request)
-    if (!userPayload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Check admin permissions
+    try {
+      await requireAdmin(request)
+    } catch (error) {
+      return NextResponse.json({ 
+        error: 'Admin access required. Please contact an administrator to access the knowledge base.' 
+      }, { status: 403 })
     }
 
     await connectToDatabase()
@@ -65,12 +69,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Add new knowledge entry
+// POST - Add new knowledge entry (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const userPayload = getUserFromRequest(request)
-    if (!userPayload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Check admin permissions
+    try {
+      await requireAdmin(request)
+    } catch (error) {
+      return NextResponse.json({ 
+        error: 'Admin access required. Only administrators can add knowledge entries.' 
+      }, { status: 403 })
     }
 
     await connectToDatabase()
@@ -98,6 +106,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Get admin user info
+    const userPayload = getUserFromRequest(request)
+    if (!userPayload) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Create knowledge entry
     const knowledge = new Knowledge({
       title,
@@ -112,7 +126,7 @@ export async function POST(request: NextRequest) {
       search_keywords: search_keywords || [],
       auto_generated,
       created_by: userPayload.userId,
-      status: auto_generated ? 'pending_review' : 'approved' // Auto approve manual entries for now
+      status: auto_generated ? 'pending_review' : 'approved' // Auto approve manual entries for admins
     })
 
     await knowledge.save()

@@ -26,6 +26,8 @@ export default function KnowledgeAdminPage() {
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const [adminCheckLoading, setAdminCheckLoading] = useState(true)
   const [newSource, setNewSource] = useState({
     url: '',
     category: '',
@@ -38,8 +40,31 @@ export default function KnowledgeAdminPage() {
   }
 
   useEffect(() => {
-    fetchKnowledge()
-  }, [])
+    checkAdminStatus()
+  }, [user])
+
+  useEffect(() => {
+    if (isAdmin === true) {
+      fetchKnowledge()
+    }
+  }, [isAdmin])
+
+  const checkAdminStatus = async () => {
+    try {
+      const response = await fetch('/api/auth/me')
+      if (response.ok) {
+        const userData = await response.json()
+        setIsAdmin(userData.user?.isAdmin === true)
+      } else {
+        setIsAdmin(false)
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error)
+      setIsAdmin(false)
+    } finally {
+      setAdminCheckLoading(false)
+    }
+  }
 
   const fetchKnowledge = async () => {
     try {
@@ -47,6 +72,8 @@ export default function KnowledgeAdminPage() {
       if (response.ok) {
         const data = await response.json()
         setKnowledge(data.knowledge)
+      } else if (response.status === 403) {
+        setIsAdmin(false)
       }
     } catch (error) {
       console.error('Error fetching knowledge:', error)
@@ -73,6 +100,9 @@ export default function KnowledgeAdminPage() {
         alert(`Source added successfully!\nTitle: ${data.knowledge.title}\nCategory: ${data.knowledge.category}`)
         setNewSource({ url: '', category: '', notes: '', reliability_score: 7 })
         fetchKnowledge() // Refresh the list
+      } else if (response.status === 403) {
+        setIsAdmin(false)
+        alert('Admin access required. You do not have permission to add sources.')
       } else {
         const error = await response.json()
         alert(`Error: ${error.error}`)
@@ -127,20 +157,73 @@ export default function KnowledgeAdminPage() {
     return <span className="text-lg">{icons[category] || icons.other}</span>
   }
 
-  if (loading) {
+  // Loading admin status
+  if (adminCheckLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Checking admin permissions...</p>
+        </div>
       </div>
     )
   }
 
+  // Not admin
+  if (isAdmin === false) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+          <div className="text-6xl mb-4">🔒</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Admin Access Required</h1>
+          <p className="text-gray-600 mb-6">
+            This page is restricted to administrators only. You need admin permissions to access the AI knowledge base training interface.
+          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              Current user: <span className="font-medium">{user.displayName || user.username}</span>
+            </p>
+            <p className="text-sm text-gray-500">
+              Admin status: <span className="font-medium text-red-600">Not an administrator</span>
+            </p>
+          </div>
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-xs text-gray-400">
+              If you believe you should have admin access, please contact a system administrator.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Loading knowledge data
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading knowledge base...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Admin interface
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-8 px-4">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">🧠 Knowledge Base Admin</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900">🧠 Knowledge Base Admin</h1>
+            <span className="bg-green-100 text-green-800 text-sm px-3 py-1 rounded-full font-medium">
+              Admin Access
+            </span>
+          </div>
           <p className="text-gray-600">Manage reliable sources and knowledge entries for the AI assistant</p>
+          <p className="text-sm text-green-600 mt-1">
+            ✅ Welcome, {user.displayName || user.username}! You have administrator privileges.
+          </p>
         </div>
 
         {/* Add Source Section */}

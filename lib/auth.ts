@@ -1,49 +1,72 @@
+import { NextRequest } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
-import { NextRequest } from 'next/server'
+import User from '@/models/User'
+import { connectToDatabase } from './mongodb'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key'
+const JWT_SECRET = process.env.JWT_SECRET
 
-export interface JWTPayload {
-  userId: string
-  email: string
-  username: string
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is not defined')
 }
 
-export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
+export function generateToken(payload: any) {
+  return jwt.sign(payload, JWT_SECRET as string, { expiresIn: '7d' })
 }
 
-export function verifyToken(token: string): JWTPayload | null {
+export function verifyToken(token: string) {
+  return jwt.verify(token, JWT_SECRET as string)
+}
+
+export async function hashPassword(password: string) {
+  return bcrypt.hash(password, 12)
+}
+
+export async function comparePassword(password: string, hashedPassword: string) {
+  return bcrypt.compare(password, hashedPassword)
+}
+
+export function getUserFromRequest(request: NextRequest) {
   try {
-    return jwt.verify(token, JWT_SECRET) as JWTPayload
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) return null
+
+    const payload = verifyToken(token) as any
+    return payload
   } catch (error) {
     return null
   }
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12)
-}
+// New admin authentication helpers
+export async function getFullUserFromRequest(request: NextRequest) {
+  try {
+    const userPayload = getUserFromRequest(request)
+    if (!userPayload) return null
 
-export async function comparePassword(password: string, hashedPassword: string): Promise<boolean> {
-  return bcrypt.compare(password, hashedPassword)
-}
-
-export function getTokenFromRequest(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7)
+    await connectToDatabase()
+    const user = await User.findById(userPayload.userId).select('-password')
+    return user
+  } catch (error) {
+    console.error('Error getting full user:', error)
+    return null
   }
-  
-  // Also check cookies for browser requests
-  const token = request.cookies.get('auth-token')?.value
-  return token || null
 }
 
-export function getUserFromRequest(request: NextRequest): JWTPayload | null {
-  const token = getTokenFromRequest(request)
-  if (!token) return null
-  
-  return verifyToken(token)
+export async function isUserAdmin(request: NextRequest): Promise<boolean> {
+  try {
+    const user = await getFullUserFromRequest(request)
+    return user?.isAdmin === true
+  } catch (error) {
+    console.error('Error checking admin status:', error)
+    return false
+  }
+}
+
+export async function requireAdmin(request: NextRequest) {
+  const isAdmin = await isUserAdmin(request)
+  if (!isAdmin) {
+    throw new Error('Admin access required')
+  }
+  return true
 } 

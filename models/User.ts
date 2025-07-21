@@ -1,20 +1,6 @@
-import mongoose, { Document, Schema } from 'mongoose'
+import mongoose from 'mongoose'
 
-export interface IUser extends Document {
-  _id: string
-  email: string
-  password: string
-  username: string
-  displayName: string
-  avatar?: string
-  bio?: string
-  isVerified: boolean
-  isSeller: boolean
-  createdAt: Date
-  updatedAt: Date
-}
-
-const UserSchema = new Schema<IUser>({
+const UserSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
@@ -30,15 +16,12 @@ const UserSchema = new Schema<IUser>({
     type: String,
     required: true,
     unique: true,
-    trim: true,
-    minlength: 3,
-    maxlength: 20
+    trim: true
   },
   displayName: {
     type: String,
     required: true,
-    trim: true,
-    maxlength: 50
+    trim: true
   },
   avatar: {
     type: String,
@@ -46,8 +29,8 @@ const UserSchema = new Schema<IUser>({
   },
   bio: {
     type: String,
-    maxlength: 500,
-    default: ''
+    default: '',
+    maxlength: 500
   },
   isVerified: {
     type: Boolean,
@@ -56,11 +39,15 @@ const UserSchema = new Schema<IUser>({
   isSeller: {
     type: Boolean,
     default: false
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 })
 
-// Index are automatically created by unique: true, no need for manual indexes
+const User = mongoose.models.User || mongoose.model('User', UserSchema)
 
-export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema) 
+export default User 
