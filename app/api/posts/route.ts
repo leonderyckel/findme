@@ -3,9 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb'
 import Post from '@/models/Post'
 import { getUserFromRequest } from '@/lib/auth'
 
-// Force dynamic rendering for this API route
 export const dynamic = 'force-dynamic'
 
+// GET - Fetch posts with filters
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase()
@@ -54,27 +54,42 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       posts: posts.map((post: any) => ({
         ...post,
+        // Ensure author is never null - provide fallback
+        author: post.author || {
+          _id: 'unknown',
+          username: 'unknown',
+          displayName: 'Unknown User',
+          avatar: null
+        },
         upvoteCount: post.upvotes?.length || 0,
         downvoteCount: post.downvotes?.length || 0,
+        commentCount: post.comments?.length || 0,
+        views: post.views || 0,
+        // Remove sensitive fields
         upvotes: undefined,
-        downvotes: undefined
+        downvotes: undefined,
+        comments: undefined
       })),
       pagination: {
         page,
         limit,
         total,
-        pages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPrevPage: page > 1
       }
     })
+
   } catch (error) {
     console.error('Get posts error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch posts' },
       { status: 500 }
     )
   }
 }
 
+// POST - Create new post
 export async function POST(request: NextRequest) {
   try {
     const userPayload = getUserFromRequest(request)
@@ -85,9 +100,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title, content, category, tags, images, videoUrl } = await request.json()
+    await connectToDatabase()
 
-    // Validate required fields
+    const { title, content, category, tags } = await request.json()
+
+    // Validation
     if (!title || !content || !category) {
       return NextResponse.json(
         { error: 'Title, content, and category are required' },
@@ -95,35 +112,50 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    await connectToDatabase()
-
+    // Create post
     const post = new Post({
       title,
       content,
       category,
       tags: tags || [],
-      images: images || [],
-      videoUrl,
-      author: userPayload.userId
+      author: userPayload.userId,
+      upvotes: [],
+      downvotes: [],
+      views: 0,
+      isSticky: false,
+      isLocked: false
     })
 
     await post.save()
+
+    // Populate author info for response
     await post.populate('author', 'username displayName avatar')
 
-    return NextResponse.json({
-      message: 'Post created successfully',
-      post: {
-        ...post.toObject(),
-        upvoteCount: 0,
-        downvoteCount: 0,
-        upvotes: undefined,
-        downvotes: undefined
-      }
+    // Ensure author is not null in response
+    const responsePost = {
+      ...post.toObject(),
+      author: post.author || {
+        _id: userPayload.userId,
+        username: 'unknown',
+        displayName: 'Unknown User',
+        avatar: null
+      },
+      upvoteCount: 0,
+      downvoteCount: 0,
+      commentCount: 0,
+      upvotes: undefined,
+      downvotes: undefined
+    }
+
+    return NextResponse.json({ 
+      post: responsePost,
+      message: 'Post created successfully' 
     }, { status: 201 })
+
   } catch (error) {
     console.error('Create post error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to create post' },
       { status: 500 }
     )
   }

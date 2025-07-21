@@ -27,8 +27,8 @@ interface PostCardProps {
       _id: string
       username: string
       displayName: string
-      avatar?: string
-    }
+      avatar?: string | null
+    } | null
   }
 }
 
@@ -46,9 +46,17 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  const truncateContent = (content: string, maxLength: number = 200) => {
+  const truncateContent = (content: string, maxLength: number = 150) => {
     if (content.length <= maxLength) return content
     return content.substring(0, maxLength) + '...'
+  }
+
+  // Default author info for when author is null
+  const authorInfo = post.author || {
+    _id: 'unknown',
+    username: 'unknown',
+    displayName: 'Unknown User',
+    avatar: null
   }
 
   return (
@@ -57,18 +65,22 @@ export default function PostCard({ post }: PostCardProps) {
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center space-x-3">
-            {post.author.avatar ? (
+            {authorInfo.avatar ? (
               <img
-                src={post.author.avatar}
-                alt={post.author.displayName}
-                className="h-8 w-8 rounded-full"
+                src={authorInfo.avatar}
+                alt={authorInfo.displayName || 'User avatar'}
+                className="h-8 w-8 rounded-full object-cover"
               />
             ) : (
               <UserCircleIcon className="h-8 w-8 text-gray-400" />
             )}
             <div>
-              <p className="text-sm font-medium text-gray-900">{post.author.displayName}</p>
-              <p className="text-xs text-gray-500">@{post.author.username}</p>
+              <p className="text-sm font-medium text-gray-900">
+                {authorInfo.displayName || 'Unknown User'}
+              </p>
+              <p className="text-xs text-gray-500">
+                @{authorInfo.username || 'unknown'}
+              </p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -82,69 +94,64 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
 
         {/* Content */}
-        <div className="mb-4">
-          <Link href={`/post/${post._id}`} className="block group">
-            <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors mb-2">
-              {post.title}
-            </h3>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              {truncateContent(post.content)}
-            </p>
-          </Link>
-        </div>
+        <Link href={`/feed/post/${post._id}`} className="block">
+          <h3 className="text-lg font-medium text-gray-900 mb-2 hover:text-blue-600 transition-colors">
+            {post.title}
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {truncateContent(post.content)}
+          </p>
+        </Link>
 
         {/* Tags */}
-        {post.tags.length > 0 && (
-          <div className="mb-4">
-            <div className="flex flex-wrap gap-2">
-              {post.tags.map((tag, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
+        {post.tags && post.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {post.tags.map((tag, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer"
+              >
+                #{tag}
+              </span>
+            ))}
           </div>
         )}
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
           <div className="flex items-center space-x-6">
-            {/* Vote buttons */}
+            {/* Upvote/Downvote */}
             <div className="flex items-center space-x-2">
               <button className="flex items-center space-x-1 text-gray-500 hover:text-green-600 transition-colors">
                 <ArrowUpIcon className="h-4 w-4" />
-                <span className="text-sm">{post.upvoteCount}</span>
+                <span className="text-sm">{post.upvoteCount || 0}</span>
               </button>
               <button className="flex items-center space-x-1 text-gray-500 hover:text-red-600 transition-colors">
                 <ArrowDownIcon className="h-4 w-4" />
-                <span className="text-sm">{post.downvoteCount}</span>
+                <span className="text-sm">{post.downvoteCount || 0}</span>
               </button>
             </div>
 
             {/* Comments */}
-            <Link
-              href={`/post/${post._id}#comments`}
-              className="flex items-center space-x-1 text-gray-500 hover:text-primary-600 transition-colors"
-            >
-              <ChatBubbleLeftIcon className="h-4 w-4" />
-              <span className="text-sm">{post.commentCount}</span>
+            <Link href={`/feed/post/${post._id}#comments`}>
+              <button className="flex items-center space-x-1 text-gray-500 hover:text-blue-600 transition-colors">
+                <ChatBubbleLeftIcon className="h-4 w-4" />
+                <span className="text-sm">{post.commentCount || 0} comments</span>
+              </button>
             </Link>
 
             {/* Views */}
             <div className="flex items-center space-x-1 text-gray-500">
               <EyeIcon className="h-4 w-4" />
-              <span className="text-sm">{post.views}</span>
+              <span className="text-sm">{post.views || 0} views</span>
             </div>
           </div>
 
-          <Link
-            href={`/post/${post._id}`}
-            className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-          >
-            Read more
+          {/* Read more */}
+          <Link href={`/feed/post/${post._id}`}>
+            <span className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+              Read more →
+            </span>
           </Link>
         </div>
       </div>
