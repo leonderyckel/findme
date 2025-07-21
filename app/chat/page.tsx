@@ -16,20 +16,36 @@ interface SearchResult {
   source: 'brave' | 'ebay' | 'amazon' | 'rockauto' | 'scraped'
 }
 
+interface KnowledgeEntry {
+  _id: string
+  title: string
+  summary: string
+  category: string
+  usefulness_score: number
+  usage_count: number
+  sources: Array<{
+    url?: string
+    reliability_score: number
+  }>
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: string
   parts?: any[]
+  knowledgeBase?: KnowledgeEntry[]
   webResults?: SearchResult[]
   installation?: string
   tips?: string
   sources?: {
     database: number
+    knowledge: number
     web: number
   }
   aiPowered?: boolean
   webSearchEnabled?: boolean
+  knowledgeBaseEnabled?: boolean
 }
 
 export default function ChatPage() {
@@ -37,7 +53,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: '🔧 Hi! I\'m your AI vehicle parts assistant. I can help you find parts, provide installation guidance, and search current online listings with real-time pricing. What vehicle part are you looking for today?',
+      content: '🧠 Hi! I\'m your AI vehicle parts assistant with access to verified knowledge base and live web search. I can help you find parts, provide expert installation guidance, and search current online listings with real-time pricing. What vehicle part are you looking for today?',
       timestamp: new Date().toISOString()
     }
   ])
@@ -87,12 +103,14 @@ export default function ChatPage() {
         content: data.response,
         timestamp: data.timestamp,
         parts: data.parts || [],
+        knowledgeBase: data.knowledgeBase || [],
         webResults: data.webResults || [],
         installation: data.installation,
         tips: data.tips,
         sources: data.sources,
         aiPowered: data.aiPowered,
-        webSearchEnabled: data.webSearchEnabled
+        webSearchEnabled: data.webSearchEnabled,
+        knowledgeBaseEnabled: data.knowledgeBaseEnabled
       }
       setMessages(prev => [...prev, aiMessage])
 
@@ -109,15 +127,33 @@ export default function ChatPage() {
     }
   }
 
+  const provideFeedback = async (knowledgeId: string, helpful: boolean) => {
+    try {
+      await fetch(`/api/knowledge/${knowledgeId}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rating: helpful ? 5 : 2,
+          helpful,
+          comment: helpful ? 'Helpful in chat' : 'Not helpful in chat'
+        })
+      })
+    } catch (error) {
+      console.error('Feedback error:', error)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto py-8 px-4">
         <div className="bg-white rounded-lg shadow-lg flex flex-col h-[80vh]">
           {/* Header */}
           <div className="border-b border-gray-200 p-4">
-            <h1 className="text-xl font-semibold text-gray-900">🤖 AI Parts Assistant</h1>
+            <h1 className="text-xl font-semibold text-gray-900">🧠 AI Parts Assistant</h1>
             <p className="text-sm text-gray-600 mt-1">
-              Expert vehicle parts help with live web search • Database + Real-time pricing
+              Expert knowledge base + Live web search + Real-time pricing
             </p>
           </div>
 
@@ -141,6 +177,11 @@ export default function ChatPage() {
                       {message.sources && (
                         <div className="flex items-center gap-4 text-xs bg-gray-50 rounded px-3 py-2">
                           <span className="font-medium">Sources:</span>
+                          {message.sources.knowledge > 0 && (
+                            <span className="flex items-center gap-1 text-purple-600">
+                              🧠 Knowledge: {message.sources.knowledge}
+                            </span>
+                          )}
                           <span className="flex items-center gap-1">
                             🗄️ Database: {message.sources.database}
                           </span>
@@ -152,6 +193,68 @@ export default function ChatPage() {
                               🤖 GPT-4 Turbo
                             </span>
                           )}
+                        </div>
+                      )}
+
+                      {/* Knowledge Base Results */}
+                      {message.knowledgeBase && message.knowledgeBase.length > 0 && (
+                        <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded">
+                          <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
+                            🧠 Verified Knowledge ({message.knowledgeBase.length})
+                          </h4>
+                          <div className="space-y-2">
+                            {message.knowledgeBase.slice(0, 3).map((kb, idx) => (
+                              <div key={idx} className="bg-white p-3 rounded border">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h5 className="font-medium text-purple-800 line-clamp-1">
+                                      {kb.title}
+                                    </h5>
+                                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                      {kb.summary}
+                                    </p>
+                                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                                      <span className="font-medium capitalize">
+                                        {kb.category.replace('_', ' ')}
+                                      </span>
+                                      <span className="bg-purple-100 px-2 py-1 rounded">
+                                        Score: {kb.usefulness_score}/10
+                                      </span>
+                                      <span>
+                                        Used: {kb.usage_count}x
+                                      </span>
+                                      {kb.sources[0]?.url && (
+                                        <a 
+                                          href={kb.sources[0].url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-purple-600 hover:text-purple-800"
+                                        >
+                                          🔗 Source
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1 ml-2">
+                                    <button
+                                      onClick={() => provideFeedback(kb._id, true)}
+                                      className="text-green-600 hover:text-green-800 text-sm"
+                                      title="Helpful"
+                                    >
+                                      👍
+                                    </button>
+                                    <button
+                                      onClick={() => provideFeedback(kb._id, false)}
+                                      className="text-red-600 hover:text-red-800 text-sm"
+                                      title="Not helpful"
+                                    >
+                                      👎
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -254,7 +357,7 @@ export default function ChatPage() {
                 <div className="bg-gray-100 p-4 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    <span className="text-gray-600">Searching database and web for parts...</span>
+                    <span className="text-gray-600">Searching knowledge base, database and web for parts...</span>
                   </div>
                 </div>
               </div>
@@ -269,7 +372,7 @@ export default function ChatPage() {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && !isLoading && sendMessage()}
-                placeholder="Ask about vehicle parts, prices, installation..."
+                placeholder="Ask about vehicle parts, installation, pricing..."
                 className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isLoading}
               />
@@ -283,7 +386,10 @@ export default function ChatPage() {
             </div>
             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
               <span className="flex items-center gap-1">
-                🤖 GPT-4 Turbo enabled
+                🧠 Knowledge base enabled
+              </span>
+              <span className="flex items-center gap-1">
+                🤖 GPT-4 Turbo powered
               </span>
               <span className="flex items-center gap-1">
                 🌐 Live web search

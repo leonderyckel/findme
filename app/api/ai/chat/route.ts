@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/mongodb'
 import Part from '@/models/Part'
+import Knowledge from '@/models/Knowledge'
 import { getUserFromRequest } from '@/lib/auth'
 import OpenAI from 'openai'
 import { webSearchService, SearchResult } from '@/lib/webSearch'
@@ -53,6 +54,42 @@ async function searchPartsInDatabase(query: string) {
   }
 }
 
+async function searchKnowledgeBase(query: string) {
+  try {
+    await connectToDatabase()
+    
+    // Extract vehicle info for better targeting
+    const vehicleInfo = webSearchService.extractVehicleInfo(query)
+    
+    // Search knowledge base
+    const knowledge = await (Knowledge as any).searchByQuery(query, {
+      limit: 5,
+      vehicleMake: vehicleInfo?.make
+    })
+    
+    // Also search by vehicle if vehicle info detected
+    let vehicleKnowledge: any[] = []
+    if (vehicleInfo?.make) {
+      vehicleKnowledge = await (Knowledge as any).findByVehicle(
+        vehicleInfo.make,
+        vehicleInfo.model,
+        vehicleInfo.year ? parseInt(vehicleInfo.year) : undefined
+      )
+    }
+    
+    // Combine and deduplicate
+    const allKnowledge = [...knowledge, ...vehicleKnowledge]
+    const uniqueKnowledge = allKnowledge.filter((item, index, self) => 
+      index === self.findIndex(k => k._id.toString() === item._id.toString())
+    ).slice(0, 5)
+    
+    return uniqueKnowledge
+  } catch (error) {
+    console.error('Knowledge search error:', error)
+    return []
+  }
+}
+
 async function searchWebForParts(query: string): Promise<SearchResult[]> {
   try {
     // Extract vehicle info for better targeting
@@ -75,7 +112,8 @@ async function searchWebForParts(query: string): Promise<SearchResult[]> {
 async function getEnhancedAIResponse(
   userMessage: string, 
   foundParts: any[] = [], 
-  webResults: SearchResult[] = []
+  webResults: SearchResult[] = [],
+  knowledgeBase: any[] = []
 ) {
   const webResultsText = webResults.length > 0 
     ? `\n\nRECENT WEB SEARCH RESULTS:\n${webResults.map(result => 
@@ -83,34 +121,46 @@ async function getEnhancedAIResponse(
       ).join('\n\n')}`
     : ''
 
-  const systemPrompt = `You are an expert vehicle parts assistant with access to real-time web search capabilities. Your role is to help users find the right parts for their vehicles and provide comprehensive guidance.
+  const knowledgeText = knowledgeBase.length > 0
+    ? `\n\nVERIFIED KNOWLEDGE BASE:\n${knowledgeBase.map(kb => 
+        `• ${kb.title}\n  Category: ${kb.category}\n  Usefulness: ${kb.usefulness_score}/10\n  Content: ${kb.summary}\n  ${kb.sources?.[0]?.url ? `Source: ${kb.sources[0].url}` : ''}`
+      ).join('\n\n')}`
+    : ''
+
+  const systemPrompt = `You are an expert vehicle parts assistant with access to real-time web search capabilities and a verified knowledge base. Your role is to help users find the right parts for their vehicles and provide comprehensive guidance.
 
 **Your capabilities:**
 - Expert knowledge of automotive and motorcycle parts
 - Access to live web search results from major parts suppliers
 - Database of catalogued parts
+- Verified knowledge base with installation guides, troubleshooting, and expert tips
 - Installation guidance and safety recommendations
 - Price comparison and supplier recommendations
 
 **Guidelines:**
+- PRIORITIZE verified knowledge base information when available (higher reliability)
 - Provide specific part recommendations with real pricing when available
 - Include installation tips and safety warnings
 - Reference web search results when they contain relevant parts/pricing
 - Suggest multiple suppliers for price comparison
 - Be honest about limitations and recommend professional help when needed
 - Always prioritize safety in recommendations
+- When using knowledge base info, mention the source reliability
 
 **Available data sources:**
 1. Internal parts database: ${JSON.stringify(foundParts)}
-2. Live web search results: ${webResultsText}
+2. Verified knowledge base (most reliable): ${knowledgeText}
+3. Live web search results: ${webResultsText}
 
 **Instructions:**
+- Start with knowledge base information if relevant (these are verified sources)
 - Analyze the user's query for vehicle make/model/year if provided
-- Combine database and web results for comprehensive recommendations
+- Combine all sources for comprehensive recommendations
 - Provide specific part numbers and prices when available
 - Include direct purchase links from the web results
 - Give installation guidance appropriate to the user's skill level
 - Mention safety considerations and tools needed
+- If knowledge base has installation guides, prioritize those instructions
 
 Keep responses informative but concise. Structure your response with clear sections for parts, pricing, installation, and safety tips.`
 
@@ -121,7 +171,7 @@ Keep responses informative but concise. Structure your response with clear secti
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage }
       ],
-      max_tokens: 1200, // Increased for more detailed responses
+      max_tokens: 1500, // Increased for more detailed responses with knowledge base
       temperature: 0.7,
     })
 
@@ -132,27 +182,44 @@ Keep responses informative but concise. Structure your response with clear secti
   }
 }
 
-async function parseAIResponseStructure(aiResponse: string, webResults: SearchResult[]) {
+async function parseAIResponseStructure(aiResponse: string, webResults: SearchResult[], knowledgeBase: any[]) {
   // Extract structured information from AI response
   let installation = null
   let tips = null
   let recommendedParts = webResults
 
-  // Look for installation instructions
-  const installationMatch = aiResponse.match(/(?:installation|install|replace|procedure)[\s\S]*?(?=\n\n|$)/i)
-  if (installationMatch) {
-    installation = installationMatch[0]
+  // Look for installation instructions (prioritize knowledge base)
+  const knowledgeInstallation = knowledgeBase.find(kb => 
+    kb.category === 'installation_guide'
+  )
+  
+  if (knowledgeInstallation) {
+    installation = knowledgeInstallation.content
+  } else {
+    const installationMatch = aiResponse.match(/(?:installation|install|replace|procedure)[\s\S]*?(?=\n\n|$)/i)
+    if (installationMatch) {
+      installation = installationMatch[0]
+    }
   }
 
-  // Look for tips or warnings
-  const tipsMatch = aiResponse.match(/(?:tip|warning|safety|important|note)[\s\S]*?(?=\n\n|$)/i)
-  if (tipsMatch) {
-    tips = tipsMatch[0]
+  // Look for tips or warnings (prioritize knowledge base)
+  const knowledgeTips = knowledgeBase.find(kb => 
+    kb.category === 'safety_warning' || kb.category === 'maintenance_tip'
+  )
+  
+  if (knowledgeTips) {
+    tips = knowledgeTips.content
+  } else {
+    const tipsMatch = aiResponse.match(/(?:tip|warning|safety|important|note)[\s\S]*?(?=\n\n|$)/i)
+    if (tipsMatch) {
+      tips = tipsMatch[0]
+    }
   }
 
   return {
     message: aiResponse,
     parts: recommendedParts,
+    knowledgeBase,
     installation,
     tips
   }
@@ -180,49 +247,66 @@ export async function POST(request: NextRequest) {
     // Step 1: Search internal database
     const foundParts = await searchPartsInDatabase(message)
 
-    // Step 2: Search web for current parts/pricing
+    // Step 2: Search knowledge base (verified information)
+    const knowledgeBase = await searchKnowledgeBase(message)
+
+    // Step 3: Search web for current parts/pricing
     const webResults = await searchWebForParts(message)
 
     let response: {
       message: string
       parts: any[]
+      knowledgeBase?: any[]
       webResults?: SearchResult[]
       installation: string | null
       tips: string | null
     }
 
-    // Step 3: Get enhanced AI response with all data
+    // Step 4: Get enhanced AI response with all data
     if (process.env.OPENAI_API_KEY) {
-      const aiResponse = await getEnhancedAIResponse(message, foundParts, webResults)
+      const aiResponse = await getEnhancedAIResponse(message, foundParts, webResults, knowledgeBase)
       
       if (aiResponse) {
-        const structuredResponse = await parseAIResponseStructure(aiResponse, webResults)
+        const structuredResponse = await parseAIResponseStructure(aiResponse, webResults, knowledgeBase)
         
         response = {
           ...structuredResponse,
           webResults, // Include web results separately for UI
           parts: foundParts // Keep database parts separate
         }
+        
+        // Update usage count for used knowledge entries
+        for (const kb of knowledgeBase) {
+          try {
+            await (Knowledge.findById(kb._id) as any)?.incrementUsage()
+          } catch (error) {
+            console.error('Error updating knowledge usage:', error)
+          }
+        }
+        
       } else {
         // Fallback if AI fails
-        response = getFallbackResponse(message, foundParts, webResults)
+        response = getFallbackResponse(message, foundParts, webResults, knowledgeBase)
       }
     } else {
-      // No OpenAI API key, use enhanced fallback with web results
-      response = getFallbackResponse(message, foundParts, webResults)
+      // No OpenAI API key, use enhanced fallback with all sources
+      response = getFallbackResponse(message, foundParts, webResults, knowledgeBase)
     }
 
     return NextResponse.json({
       response: response.message,
       parts: response.parts || [],
+      knowledgeBase: response.knowledgeBase || [],
       webResults: response.webResults || [],
       installation: response.installation,
       tips: response.tips,
       timestamp: new Date().toISOString(),
       aiPowered: !!process.env.OPENAI_API_KEY,
       webSearchEnabled: true,
+      knowledgeBaseEnabled: true,
       sources: {
         database: foundParts.length,
+        knowledge: knowledgeBase.length,
         web: webResults.length
       }
     })
@@ -235,11 +319,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = []) {
+function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = [], knowledgeBase: any[] = []) {
   const lowerMessage = message.toLowerCase()
   
-  if (foundParts.length > 0 || webResults.length > 0) {
+  if (foundParts.length > 0 || webResults.length > 0 || knowledgeBase.length > 0) {
     let responseMessage = `I found information for your query:`
+    
+    if (knowledgeBase.length > 0) {
+      responseMessage += `\n\nFrom verified knowledge base: ${knowledgeBase.length} expert entries`
+    }
     
     if (foundParts.length > 0) {
       responseMessage += `\n\nFrom our database: ${foundParts.length} catalogued parts`
@@ -255,24 +343,29 @@ function getFallbackResponse(message: string, foundParts: any[], webResults: Sea
     return {
       message: responseMessage,
       parts: foundParts,
+      knowledgeBase,
       webResults,
-      installation: "Please refer to your vehicle's service manual for specific installation procedures.",
-      tips: "Always use quality parts and follow proper torque specifications for safety."
+      installation: knowledgeBase.find(kb => kb.category === 'installation_guide')?.content || 
+                   "Please refer to your vehicle's service manual for specific installation procedures.",
+      tips: knowledgeBase.find(kb => kb.category === 'safety_warning')?.content || 
+           "Always use quality parts and follow proper torque specifications for safety."
     }
   }
   
   // Check for key phrases in mock responses
   if (lowerMessage.includes('cam chain tensioner') || lowerMessage.includes('cct')) {
     return {
-      message: "I found some cam chain tensioner options. Let me search for current pricing and availability:",
+      message: "I found some cam chain tensioner information. Let me search for current pricing and verified guidance:",
       ...mockResponses['cam chain tensioner'],
+      knowledgeBase,
       webResults
     }
   }
   
   return {
-    message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for? I can search our database and current online listings for the best options.",
+    message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for? I can search our database, verified knowledge base, and current online listings for the best options.",
     parts: [],
+    knowledgeBase,
     webResults,
     installation: null,
     tips: null
