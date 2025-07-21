@@ -1,4 +1,4 @@
-import axios from 'axios'
+import fetch from 'node-fetch'
 import * as cheerio from 'cheerio'
 
 export interface SearchResult {
@@ -67,21 +67,26 @@ class WebSearchService {
     try {
       const enhancedQuery = this.enhanceQuery(query, options)
       
-      const response = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+      const response = await fetch('https://api.search.brave.com/res/v1/web/search?' + new URLSearchParams({
+        q: enhancedQuery,
+        count: '10',
+        search_lang: 'en',
+        country: 'US',
+        safesearch: 'moderate'
+      }), {
         headers: {
           'X-Subscription-Token': this.braveApiKey,
           'Accept': 'application/json'
-        },
-        params: {
-          q: enhancedQuery,
-          count: 10,
-          search_lang: 'en',
-          country: 'US',
-          safesearch: 'moderate'
         }
       })
 
-      return response.data.web?.results?.map((result: any) => ({
+      if (!response.ok) {
+        throw new Error(`Brave Search API error: ${response.status}`)
+      }
+
+      const data: any = await response.json()
+
+      return data.web?.results?.map((result: any) => ({
         title: result.title,
         url: result.url,
         description: result.description,
@@ -99,14 +104,18 @@ class WebSearchService {
     try {
       const searchUrl = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query + ' automotive parts')}&_sacat=6028`
       
-      const response = await axios.get(searchUrl, {
+      const response = await fetch(searchUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        },
-        timeout: 5000
+        }
       })
 
-      const $ = cheerio.load(response.data)
+      if (!response.ok) {
+        throw new Error(`eBay search failed: ${response.status}`)
+      }
+
+      const html = await response.text()
+      const $ = cheerio.load(html)
       const results: SearchResult[] = []
 
       $('.s-item').slice(0, 5).each((i, element) => {
@@ -139,14 +148,18 @@ class WebSearchService {
     try {
       const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(query + ' automotive')}&rh=n%3A15684181`
       
-      const response = await axios.get(searchUrl, {
+      const response = await fetch(searchUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        },
-        timeout: 5000
+        }
       })
 
-      const $ = cheerio.load(response.data)
+      if (!response.ok) {
+        throw new Error(`Amazon search failed: ${response.status}`)
+      }
+
+      const html = await response.text()
+      const $ = cheerio.load(html)
       const results: SearchResult[] = []
 
       $('[data-component-type="s-search-result"]').slice(0, 5).each((i, element) => {
@@ -218,20 +231,24 @@ class WebSearchService {
   }
 
   private extractSupplier(url: string): string {
-    const domain = new URL(url).hostname.toLowerCase()
-    
-    if (domain.includes('ebay')) return 'eBay'
-    if (domain.includes('amazon')) return 'Amazon'
-    if (domain.includes('rockauto')) return 'RockAuto'
-    if (domain.includes('autozone')) return 'AutoZone'
-    if (domain.includes('advanceauto')) return 'Advance Auto Parts'
-    if (domain.includes('oreillyauto')) return "O'Reilly Auto Parts"
-    if (domain.includes('napaonline')) return 'NAPA Auto Parts'
-    if (domain.includes('carparts')) return 'CarParts.com'
-    if (domain.includes('partsgeek')) return 'PartsGeek'
-    if (domain.includes('1aauto')) return '1A Auto'
-    
-    return domain.replace('www.', '').split('.')[0]
+    try {
+      const domain = new URL(url).hostname.toLowerCase()
+      
+      if (domain.includes('ebay')) return 'eBay'
+      if (domain.includes('amazon')) return 'Amazon'
+      if (domain.includes('rockauto')) return 'RockAuto'
+      if (domain.includes('autozone')) return 'AutoZone'
+      if (domain.includes('advanceauto')) return 'Advance Auto Parts'
+      if (domain.includes('oreillyauto')) return "O'Reilly Auto Parts"
+      if (domain.includes('napaonline')) return 'NAPA Auto Parts'
+      if (domain.includes('carparts')) return 'CarParts.com'
+      if (domain.includes('partsgeek')) return 'PartsGeek'
+      if (domain.includes('1aauto')) return '1A Auto'
+      
+      return domain.replace('www.', '').split('.')[0]
+    } catch {
+      return 'Unknown'
+    }
   }
 
   private rankResults(results: SearchResult[], query: string): SearchResult[] {
