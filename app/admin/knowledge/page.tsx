@@ -405,6 +405,52 @@ export default function KnowledgeAdminPage() {
           <p className="text-gray-600 mb-6">
             🧠 <strong>Train the AI comprehensively</strong> by crawling entire websites. The AI will extract, categorize, and learn from all pages found!
           </p>
+
+          {/* Example URLs Section */}
+          <div className="bg-white rounded-lg p-4 mb-6 border border-purple-100">
+            <h3 className="font-semibold text-gray-900 mb-3">💡 Example URLs to Try:</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-1">🚗 Automotive Documentation:</p>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setCrawlConfig({...crawlConfig, baseUrl: 'https://www.rockauto.com/en/faq'})}
+                    className="block text-xs text-blue-600 hover:text-blue-800 underline text-left"
+                  >
+                    https://www.rockauto.com/en/faq
+                  </button>
+                  <button
+                    onClick={() => setCrawlConfig({...crawlConfig, baseUrl: 'https://help.autozone.com/'})}
+                    className="block text-xs text-blue-600 hover:text-blue-800 underline text-left"
+                  >
+                    https://help.autozone.com/
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-1">🔧 Technical Guides:</p>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setCrawlConfig({...crawlConfig, baseUrl: 'https://www.wikihow.com/Category:Cars-&-Other-Vehicles'})}
+                    className="block text-xs text-blue-600 hover:text-blue-800 underline text-left"
+                  >
+                    https://www.wikihow.com/Category:Cars-&-Other-Vehicles
+                  </button>
+                  <button
+                    onClick={() => setCrawlConfig({...crawlConfig, baseUrl: 'https://www.autoguide.com/maintenance'})}
+                    className="block text-xs text-blue-600 hover:text-blue-800 underline text-left"
+                  >
+                    https://www.autoguide.com/maintenance
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">💡 Tip: Start with documentation sites</span>
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">✅ FAQ pages work great</span>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">🎯 Use include patterns like /docs/, /help/</span>
+            </div>
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <div>
@@ -418,6 +464,7 @@ export default function KnowledgeAdminPage() {
                 placeholder="https://site.com/documentation"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <p className="text-xs text-gray-500 mt-1">📝 The starting page URL to crawl from</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -431,6 +478,7 @@ export default function KnowledgeAdminPage() {
                 onChange={(e) => setCrawlConfig({...crawlConfig, maxPages: parseInt(e.target.value)})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <p className="text-xs text-gray-500 mt-1">🔢 Maximum number of pages to crawl</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -444,6 +492,7 @@ export default function KnowledgeAdminPage() {
                 onChange={(e) => setCrawlConfig({...crawlConfig, maxDepth: parseInt(e.target.value)})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <p className="text-xs text-gray-500 mt-1">🕳️ How many levels deep to follow links</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -456,6 +505,7 @@ export default function KnowledgeAdminPage() {
                 placeholder="/docs/,/guides/,/tutorials/"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <p className="text-xs text-gray-500 mt-1">✅ Only crawl URLs containing these patterns</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -468,6 +518,7 @@ export default function KnowledgeAdminPage() {
                 placeholder="/admin/,/login/,/contact/"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <p className="text-xs text-gray-500 mt-1">❌ Skip URLs containing these patterns</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -482,7 +533,11 @@ export default function KnowledgeAdminPage() {
                 className="w-full"
               />
               <div className="text-center text-sm text-gray-600 mt-1">
-                {crawlConfig.reliability_score}/10
+                {crawlConfig.reliability_score}/10 - {
+                  crawlConfig.reliability_score >= 8 ? '🌟 Excellent' :
+                  crawlConfig.reliability_score >= 6 ? '👍 Good' :
+                  crawlConfig.reliability_score >= 4 ? '⚠️ Fair' : '❓ Low'
+                }
               </div>
             </div>
           </div>
@@ -495,26 +550,47 @@ export default function KnowledgeAdminPage() {
                 onChange={(e) => setCrawlConfig({...crawlConfig, onlyDomain: e.target.checked})}
                 className="mr-2"
               />
-              <span className="text-sm text-gray-700">Only crawl same domain</span>
+              <span className="text-sm text-gray-700">🔒 Only crawl same domain (recommended)</span>
             </label>
           </div>
 
-          <button
-            onClick={startSiteCrawl}
-            disabled={crawling || !crawlConfig.baseUrl}
-            className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-3 rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
-          >
-            {crawling ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Crawling Site...
-              </>
-            ) : (
-              <>
-                🚀 Start Intelligent Site Crawl
-              </>
+          {/* Crawl Button with Status */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={startSiteCrawl}
+              disabled={crawling || !crawlConfig.baseUrl}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-3 rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+            >
+              {crawling ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Crawling Site...
+                </>
+              ) : (
+                <>
+                  🚀 Start Intelligent Site Crawl
+                </>
+              )}
+            </button>
+            
+            {/* Quick Actions */}
+            {!crawling && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCrawlConfig({...crawlConfig, maxPages: 5, maxDepth: 1, reliability_score: 8})}
+                  className="text-sm bg-green-100 text-green-700 px-3 py-2 rounded hover:bg-green-200"
+                >
+                  🚀 Quick Test (5 pages)
+                </button>
+                <button
+                  onClick={() => setCrawlConfig({...crawlConfig, maxPages: 20, maxDepth: 3, reliability_score: 7})}
+                  className="text-sm bg-blue-100 text-blue-700 px-3 py-2 rounded hover:bg-blue-200"
+                >
+                  📚 Deep Learning (20 pages)
+                </button>
+              </div>
             )}
-          </button>
+          </div>
 
           {crawlProgress && (
             <div className="mt-6 bg-white rounded-lg p-4 border border-purple-200">
@@ -528,33 +604,61 @@ export default function KnowledgeAdminPage() {
                   <span>Current URL:</span>
                   <span className="font-mono text-xs text-gray-600 truncate max-w-xs">{crawlProgress.currentUrl}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span>Found URLs:</span>
-                  <span className="font-medium">{crawlProgress.foundUrls}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Processed:</span>
-                  <span className="font-medium">{crawlProgress.processedUrls}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Saved Entries:</span>
-                  <span className="font-medium text-green-600">{crawlProgress.savedEntries}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Errors:</span>
-                  <span className="font-medium text-red-600">{crawlProgress.errors}</span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="text-center p-2 bg-blue-50 rounded">
+                    <div className="font-bold text-blue-600">{crawlProgress.foundUrls}</div>
+                    <div className="text-blue-500">🔍 Found</div>
+                  </div>
+                  <div className="text-center p-2 bg-purple-50 rounded">
+                    <div className="font-bold text-purple-600">{crawlProgress.processedUrls}</div>
+                    <div className="text-purple-500">⚡ Processed</div>
+                  </div>
+                  <div className="text-center p-2 bg-green-50 rounded">
+                    <div className="font-bold text-green-600">{crawlProgress.savedEntries}</div>
+                    <div className="text-green-500">💾 Saved</div>
+                  </div>
+                  <div className="text-center p-2 bg-red-50 rounded">
+                    <div className="font-bold text-red-600">{crawlProgress.errors}</div>
+                    <div className="text-red-500">❌ Errors</div>
+                  </div>
                 </div>
                 {crawlProgress.foundUrls > 0 && (
                   <div className="mt-3">
-                    <div className="bg-gray-200 rounded-full h-2">
+                    <div className="bg-gray-200 rounded-full h-3">
                       <div 
-                        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${(crawlProgress.processedUrls / crawlProgress.foundUrls) * 100}%` }}
-                      ></div>
+                        className="bg-gradient-to-r from-purple-500 to-indigo-500 h-3 rounded-full transition-all duration-300 flex items-center justify-center"
+                        style={{ width: `${Math.min((crawlProgress.processedUrls / crawlProgress.foundUrls) * 100, 100)}%` }}
+                      >
+                        {Math.round((crawlProgress.processedUrls / crawlProgress.foundUrls) * 100) > 10 && (
+                          <span className="text-white text-xs font-medium">
+                            {Math.round((crawlProgress.processedUrls / crawlProgress.foundUrls) * 100)}%
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-gray-500 mt-1 text-center">
                       {Math.round((crawlProgress.processedUrls / crawlProgress.foundUrls) * 100)}% Complete
                     </p>
+                  </div>
+                )}
+                
+                {/* Control buttons during crawl */}
+                {crawlProgress.isActive && (
+                  <div className="flex gap-2 mt-4 pt-3 border-t border-purple-100">
+                    <button
+                      onClick={() => fetch('/api/knowledge/crawl-progress', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'stop' })
+                      }).then(() => {
+                        setCrawling(false)
+                        setCrawlProgress(null)
+                        alert('Crawl stopped successfully!')
+                      })}
+                      className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
+                    >
+                      🛑 Stop Crawl
+                    </button>
                   </div>
                 )}
               </div>
