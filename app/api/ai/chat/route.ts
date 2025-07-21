@@ -127,42 +127,48 @@ async function getEnhancedAIResponse(
       ).join('\n\n')}`
     : ''
 
-  const systemPrompt = `You are an expert vehicle parts assistant with access to real-time web search capabilities and a verified knowledge base. Your role is to help users find the right parts for their vehicles and provide comprehensive guidance.
+  const systemPrompt = `You are a friendly, experienced automotive expert who loves helping people solve car and motorcycle problems. Think of yourself as the knowledgeable mechanic neighbor who always has time to explain things clearly.
 
-**Your capabilities:**
-- Expert knowledge of automotive and motorcycle parts
-- Access to live web search results from major parts suppliers
-- Database of catalogued parts
-- Verified knowledge base with installation guides, troubleshooting, and expert tips
-- Installation guidance and safety recommendations
-- Price comparison and supplier recommendations
+**Your personality:**
+- Conversational and approachable - talk like you're having a chat over coffee
+- Explain the "why" behind recommendations, not just the "what"
+- Share context and insights from your experience
+- Use analogies and real-world examples when helpful
+- Acknowledge when something might be tricky or when to seek professional help
+- Celebrate when you find good deals or perfect solutions
 
-**Guidelines:**
-- PRIORITIZE verified knowledge base information when available (higher reliability)
-- Provide specific part recommendations with real pricing when available
-- Include installation tips and safety warnings
-- Reference web search results when they contain relevant parts/pricing
-- Suggest multiple suppliers for price comparison
-- Be honest about limitations and recommend professional help when needed
-- Always prioritize safety in recommendations
-- When using knowledge base info, mention the source reliability
+**How to structure your responses:**
+1. **Start conversational**: "Great question!" or "I found some interesting options for you..."
+2. **Explain what you discovered**: Walk through what the data tells us
+3. **Provide context**: Why this part/solution makes sense for their situation
+4. **Give practical advice**: Installation tips, gotchas to watch for, tool requirements
+5. **Suggest next steps**: What to do with this information
+
+**Guidelines for being helpful:**
+- PRIORITIZE verified knowledge base information (mention why it's reliable)
+- Explain the significance of prices, suppliers, part quality differences
+- Point out red flags or things to verify before buying
+- Connect related information (if they ask about brakes, mention related maintenance)
+- Use specific examples from the data instead of generic advice
+- When you reference sources, explain why they're credible or what to verify
 
 **Available data sources:**
 1. Internal parts database: ${JSON.stringify(foundParts)}
-2. Verified knowledge base (most reliable): ${knowledgeText}
-3. Live web search results: ${webResultsText}
+2. Verified knowledge base (expert-reviewed): ${knowledgeText}
+3. Live web search results (current market): ${webResultsText}
 
-**Instructions:**
-- Start with knowledge base information if relevant (these are verified sources)
-- Analyze the user's query for vehicle make/model/year if provided
-- Combine all sources for comprehensive recommendations
-- Provide specific part numbers and prices when available
-- Include direct purchase links from the web results
-- Give installation guidance appropriate to the user's skill level
-- Mention safety considerations and tools needed
-- If knowledge base has installation guides, prioritize those instructions
+**Response style:**
+- Start with enthusiasm about what you found
+- Explain the story the data tells (market trends, quality indicators, compatibility)
+- Break down complex information into digestible pieces
+- Use emojis sparingly for key points, not every sentence
+- End with clear next steps or follow-up questions
 
-Keep responses informative but concise. Structure your response with clear sections for parts, pricing, installation, and safety tips.`
+**Example approach:**
+Instead of: "Found 3 parts. Here are the specs..."
+Say: "Great news! I found some solid options for your [specific need]. The most interesting find is [specific part] because [reason]. Here's what makes it a good choice..."
+
+Remember: You're not just searching and reporting - you're helping someone solve a real problem with their vehicle. Make them feel confident about their next steps.`
 
   try {
     const completion = await openai.chat.completions.create({
@@ -323,47 +329,105 @@ function getFallbackResponse(message: string, foundParts: any[], webResults: Sea
   const lowerMessage = message.toLowerCase()
   
   if (foundParts.length > 0 || webResults.length > 0 || knowledgeBase.length > 0) {
-    let responseMessage = `I found information for your query:`
+    let responseMessage = `Great! I found some helpful information for your query. Let me walk you through what I discovered:`
     
+    // Knowledge base findings
     if (knowledgeBase.length > 0) {
-      responseMessage += `\n\nFrom verified knowledge base: ${knowledgeBase.length} expert entries`
+      responseMessage += `\n\n🧠 **From our expert knowledge base** (${knowledgeBase.length} verified entries):`
+      
+      const topKnowledge = knowledgeBase[0]
+      responseMessage += `\n\nThe most relevant entry is about "${topKnowledge.title}" - this comes from our verified sources with a reliability score of ${topKnowledge.sources?.[0]?.reliability_score || 'high'}/10. `
+      
+      if (topKnowledge.category === 'installation_guide') {
+        responseMessage += `Since this is an installation guide, you can trust these step-by-step instructions.`
+      } else if (topKnowledge.category === 'troubleshooting') {
+        responseMessage += `This troubleshooting guide has helped other users resolve similar issues.`
+      } else if (topKnowledge.category === 'safety_warning') {
+        responseMessage += `Important: This contains safety information you'll want to review before proceeding.`
+      }
     }
     
-    if (foundParts.length > 0) {
-      responseMessage += `\n\nFrom our database: ${foundParts.length} catalogued parts`
+    // Web results findings
+    if (webResults.length > 0) {
+      responseMessage += `\n\n🛒 **Current market options** (${webResults.length} live listings):`
+      
+      const topResults = webResults.slice(0, 3)
+      const pricesAvailable = topResults.filter(r => r.price)
+      
+      if (pricesAvailable.length > 0) {
+        const lowestPrice = Math.min(...pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0')))
+        const highestPrice = Math.max(...pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0')))
+        
+        responseMessage += `\n\nPrice range I found: ${lowestPrice.toFixed(2)} to ${highestPrice.toFixed(2)}. `
+        
+        if (highestPrice / lowestPrice > 1.5) {
+          responseMessage += `There's quite a price spread here - the higher-priced options might be OEM or premium quality, while lower prices could be aftermarket alternatives.`
+        }
+      }
+      
+      responseMessage += `\n\nTop recommendations:\n`
+      topResults.forEach((result, idx) => {
+        responseMessage += `• **${result.title}** from ${result.supplier}${result.price ? ` (${result.price})` : ''}\n`
+        if (idx === 0 && result.description) {
+          responseMessage += `  └ ${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''}\n`
+        }
+      })
     }
+    
+    // Database parts
+    if (foundParts.length > 0) {
+      responseMessage += `\n\n📚 **From our parts database** (${foundParts.length} catalogued parts):`
+      responseMessage += `\n\nI also found ${foundParts.length} matching parts in our internal database. These are parts we've catalogued and verified for compatibility.`
+    }
+    
+    // Next steps
+    responseMessage += `\n\n**What I'd suggest next:**`
     
     if (webResults.length > 0) {
-      responseMessage += `\n\nFrom web search: ${webResults.length} current listings with prices`
-      responseMessage += `\n\nTop recommendations:\n${webResults.slice(0, 3).map(result => 
-        `• ${result.title} - ${result.supplier} ${result.price ? `($${result.price})` : ''}`
-      ).join('\n')}`
+      responseMessage += `\n• Check out the top listings above - I'd start with the ${webResults[0].supplier} option`
     }
-
+    if (knowledgeBase.length > 0) {
+      const installGuide = knowledgeBase.find(kb => kb.category === 'installation_guide')
+      if (installGuide) {
+        responseMessage += `\n• Review the installation guide below - it'll help you understand what you're getting into`
+      }
+    }
+    responseMessage += `\n• Double-check compatibility with your specific vehicle year and model before ordering`
+    
     return {
       message: responseMessage,
       parts: foundParts,
       knowledgeBase,
       webResults,
       installation: knowledgeBase.find(kb => kb.category === 'installation_guide')?.content || 
-                   "Please refer to your vehicle's service manual for specific installation procedures.",
+                   "I'd recommend checking your vehicle's service manual for specific installation procedures. Every model can have its quirks!",
       tips: knowledgeBase.find(kb => kb.category === 'safety_warning')?.content || 
-           "Always use quality parts and follow proper torque specifications for safety."
+           "Always use quality parts and follow proper torque specifications. When in doubt, have a professional double-check your work - safety first!"
     }
   }
   
-  // Check for key phrases in mock responses
+  // Handle specific queries with mock responses
   if (lowerMessage.includes('cam chain tensioner') || lowerMessage.includes('cct')) {
     return {
-      message: "I found some cam chain tensioner information. Let me search for current pricing and verified guidance:",
+      message: `Ah, cam chain tensioner issues! That's a common concern, especially on older bikes. Let me search for current pricing and verified guidance for you. The CCT is crucial for maintaining proper timing, so you'll want to get this sorted out properly.`,
       ...mockResponses['cam chain tensioner'],
       knowledgeBase,
       webResults
     }
   }
   
+  // Default helpful response
   return {
-    message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for? I can search our database, verified knowledge base, and current online listings for the best options.",
+    message: `I'd love to help you find the right parts! 🔧 
+
+To give you the most accurate recommendations, could you share a bit more about:
+• Your vehicle details (make, model, year)
+• The specific part or problem you're dealing with
+• Whether you're planning to install it yourself or have a shop do it
+
+With those details, I can search our expert knowledge base, current market listings, and parts database to find exactly what you need. I'm here to make sure you get the right part at a good price! 
+
+What's going on with your ride?`,
     parts: [],
     knowledgeBase,
     webResults,

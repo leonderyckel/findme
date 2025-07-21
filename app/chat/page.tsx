@@ -200,70 +200,92 @@ export default function ChatPage() {
                       {message.knowledgeBase && message.knowledgeBase.length > 0 && (
                         <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded">
                           <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
-                            🧠 Verified Knowledge ({message.knowledgeBase.length})
+                            🧠 Expert Knowledge ({message.knowledgeBase.length})
                           </h4>
+                          <p className="text-sm text-purple-800 mb-3 italic">
+                            These are verified guides and tips from our expert knowledge base - trusted by mechanics and DIYers:
+                          </p>
                           <div className="space-y-2">
                             {message.knowledgeBase.slice(0, 3).map((kb, idx) => (
                               <div key={idx} className="bg-white p-3 rounded border">
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
-                                    <h5 className="font-medium text-purple-800 line-clamp-1">
+                                    <h5 className="font-medium text-purple-800 line-clamp-1 flex items-center gap-2">
+                                      {kb.category === 'installation_guide' && '🔧'}
+                                      {kb.category === 'troubleshooting' && '🔍'}
+                                      {kb.category === 'safety_warning' && '⚠️'}
+                                      {kb.category === 'maintenance_tip' && '🛠️'}
+                                      {kb.category === 'part_specification' && '📋'}
+                                      {!['installation_guide', 'troubleshooting', 'safety_warning', 'maintenance_tip', 'part_specification'].includes(kb.category) && '📄'}
                                       {kb.title}
                                     </h5>
                                     <p className="text-sm text-gray-600 mt-1 line-clamp-2">
                                       {kb.summary}
                                     </p>
                                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                                      <span className="font-medium capitalize">
+                                      <span className="font-medium capitalize bg-purple-100 px-2 py-1 rounded">
                                         {kb.category.replace('_', ' ')}
                                       </span>
-                                      <span className="bg-purple-100 px-2 py-1 rounded">
-                                        Score: {kb.usefulness_score}/10
+                                      <span className="flex items-center gap-1">
+                                        ⭐ {kb.usefulness_score}/10
+                                        <span className="text-purple-600">
+                                          {kb.usefulness_score >= 8 ? 'Excellent' : 
+                                           kb.usefulness_score >= 6 ? 'Good' : 
+                                           kb.usefulness_score >= 4 ? 'Fair' : 'Basic'}
+                                        </span>
                                       </span>
-                                      <span>
-                                        Used: {kb.usage_count}x
+                                      <span className="text-green-600">
+                                        ✓ Used {kb.usage_count}x
                                       </span>
                                       {kb.sources[0]?.url && (
                                         <a 
                                           href={kb.sources[0].url} 
                                           target="_blank" 
                                           rel="noopener noreferrer"
-                                          className="text-purple-600 hover:text-purple-800"
+                                          className="text-purple-600 hover:text-purple-800 flex items-center gap-1"
                                         >
                                           🔗 Source
                                         </a>
                                       )}
                                     </div>
                                   </div>
-                                  <div className="flex gap-1 ml-2">
+                                  <div className="ml-3 flex flex-col gap-1">
                                     <button
                                       onClick={() => provideFeedback(kb._id, true)}
-                                      className="text-green-600 hover:text-green-800 text-sm"
-                                      title="Helpful"
+                                      className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs hover:bg-green-200 transition-colors"
+                                      title="This helped me!"
                                     >
-                                      👍
+                                      👍 Helpful
                                     </button>
                                     <button
                                       onClick={() => provideFeedback(kb._id, false)}
-                                      className="text-red-600 hover:text-red-800 text-sm"
-                                      title="Not helpful"
+                                      className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs hover:bg-red-200 transition-colors"
+                                      title="Not what I needed"
                                     >
-                                      👎
+                                      👎 Not helpful
                                     </button>
                                   </div>
                                 </div>
                               </div>
                             ))}
                           </div>
+                          {message.knowledgeBase.length > 3 && (
+                            <p className="text-xs text-purple-600 mt-2 text-center">
+                              And {message.knowledgeBase.length - 3} more expert entries found - all verified and reliable!
+                            </p>
+                          )}
                         </div>
                       )}
 
-                      {/* Web search results */}
+                      {/* Web Results */}
                       {message.webResults && message.webResults.length > 0 && (
                         <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
                           <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                            🛍️ Current Online Listings ({message.webResults.length})
+                            🛒 Live Market Results ({message.webResults.length})
                           </h4>
+                          <p className="text-sm text-blue-800 mb-3 italic">
+                            Fresh from the web - here's what's available right now with current pricing:
+                          </p>
                           <div className="space-y-2">
                             {message.webResults.slice(0, 5).map((result, idx) => (
                               <div key={idx} className="bg-white p-3 rounded border">
@@ -273,31 +295,84 @@ export default function ChatPage() {
                                       href={result.url} 
                                       target="_blank" 
                                       rel="noopener noreferrer"
-                                      className="font-medium text-blue-700 hover:text-blue-900 line-clamp-2"
+                                      className="font-medium text-blue-700 hover:text-blue-900 line-clamp-2 flex items-center gap-2"
                                     >
+                                      {result.supplier === 'eBay' && '🏪'}
+                                      {result.supplier === 'Amazon' && '📦'}
+                                      {result.supplier === 'RockAuto' && '🔧'}
+                                      {!['eBay', 'Amazon', 'RockAuto'].includes(result.supplier || '') && '🛒'}
                                       {result.title}
                                     </a>
                                     <p className="text-sm text-gray-600 mt-1 line-clamp-2">
                                       {result.description}
                                     </p>
                                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                                      <span className="font-medium">{result.supplier}</span>
+                                      <span className="font-medium bg-blue-100 px-2 py-1 rounded flex items-center gap-1">
+                                        {result.supplier === 'eBay' && '🏪 eBay'} 
+                                        {result.supplier === 'Amazon' && '📦 Amazon'}
+                                        {result.supplier === 'RockAuto' && '🔧 RockAuto'}
+                                        {!['eBay', 'Amazon', 'RockAuto'].includes(result.supplier || '') && `🛒 ${result.supplier}`}
+                                      </span>
                                       {result.source && (
                                         <span className="bg-gray-100 px-2 py-1 rounded">
                                           {result.source.toUpperCase()}
+                                        </span>
+                                      )}
+                                      {idx === 0 && (
+                                        <span className="bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                                          🏆 Top Pick
                                         </span>
                                       )}
                                     </div>
                                   </div>
                                   {result.price && (
                                     <div className="ml-3 text-right">
-                                      <div className="font-bold text-green-600">{result.price}</div>
+                                      <div className="font-bold text-green-600 text-lg">{result.price}</div>
+                                      {idx === 0 && message.webResults && message.webResults.length > 1 && (
+                                        <div className="text-xs text-gray-500">
+                                          Compare others →
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
                               </div>
                             ))}
                           </div>
+                          
+                          {/* Price Analysis */}
+                          {(() => {
+                            const pricesAvailable = message.webResults.filter(r => r.price)
+                            if (pricesAvailable.length > 1) {
+                              const prices = pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0'))
+                              const lowestPrice = Math.min(...prices)
+                              const highestPrice = Math.max(...prices)
+                              const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
+                              
+                              return (
+                                <div className="mt-3 bg-white p-2 rounded border text-xs">
+                                  <p className="font-medium text-blue-800 mb-1">💰 Price Analysis:</p>
+                                  <div className="flex gap-4 text-gray-600">
+                                    <span>Lowest: <span className="text-green-600 font-medium">${lowestPrice.toFixed(2)}</span></span>
+                                    <span>Average: <span className="text-blue-600 font-medium">${avgPrice.toFixed(2)}</span></span>
+                                    <span>Highest: <span className="text-red-600 font-medium">${highestPrice.toFixed(2)}</span></span>
+                                  </div>
+                                  {highestPrice / lowestPrice > 1.5 && (
+                                    <p className="text-orange-600 mt-1">
+                                      💡 Significant price spread - consider OEM vs aftermarket quality differences
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            }
+                            return null
+                          })()}
+                          
+                          {message.webResults.length > 5 && (
+                            <p className="text-xs text-blue-600 mt-2 text-center">
+                              And {message.webResults.length - 5} more listings available - shop around for the best deal!
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -326,16 +401,40 @@ export default function ChatPage() {
                       {/* Installation guide */}
                       {message.installation && (
                         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
-                          <h4 className="font-semibold text-yellow-900 mb-2">🔧 Installation Guide</h4>
-                          <div className="text-sm whitespace-pre-wrap">{message.installation}</div>
+                          <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                            🔧 Step-by-Step Installation
+                          </h4>
+                          <div className="text-sm">
+                            <p className="text-yellow-800 mb-2 italic">
+                              Here's how to tackle this installation safely:
+                            </p>
+                            <div className="whitespace-pre-wrap bg-white p-3 rounded border">
+                              {message.installation}
+                            </div>
+                            <p className="text-xs text-yellow-700 mt-2">
+                              💡 Take your time with each step - rushing leads to mistakes!
+                            </p>
+                          </div>
                         </div>
                       )}
 
                       {/* Tips */}
                       {message.tips && (
                         <div className="bg-orange-50 border-l-4 border-orange-400 p-3 rounded">
-                          <h4 className="font-semibold text-orange-900 mb-2">💡 Tips & Safety</h4>
-                          <div className="text-sm whitespace-pre-wrap">{message.tips}</div>
+                          <h4 className="font-semibold text-orange-900 mb-2 flex items-center gap-2">
+                            💡 Pro Tips & Safety Reminders
+                          </h4>
+                          <div className="text-sm">
+                            <p className="text-orange-800 mb-2 italic">
+                              Learn from the pros - here's what seasoned mechanics want you to know:
+                            </p>
+                            <div className="whitespace-pre-wrap bg-white p-3 rounded border">
+                              {message.tips}
+                            </div>
+                            <p className="text-xs text-orange-700 mt-2">
+                              ⚠️ When in doubt, consult a professional - your safety is worth more than any part!
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
