@@ -21,11 +21,23 @@ interface KnowledgeEntry {
   }>
 }
 
+interface CrawlProgress {
+  isActive: boolean
+  currentUrl: string
+  foundUrls: number
+  processedUrls: number
+  savedEntries: number
+  errors: number
+  status: string
+}
+
 export default function KnowledgeAdminPage() {
   const { user } = useAuth()
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
+  const [crawling, setCrawling] = useState(false)
+  const [crawlProgress, setCrawlProgress] = useState<CrawlProgress | null>(null)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [adminCheckLoading, setAdminCheckLoading] = useState(true)
   const [newSource, setNewSource] = useState({
@@ -33,6 +45,15 @@ export default function KnowledgeAdminPage() {
     category: '',
     notes: '',
     reliability_score: 7
+  })
+  const [crawlConfig, setCrawlConfig] = useState({
+    baseUrl: '',
+    maxPages: 10,
+    maxDepth: 2,
+    onlyDomain: true,
+    includePatterns: '',
+    excludePatterns: '',
+    reliability_score: 8
   })
 
   if (!user) {
@@ -112,6 +133,76 @@ export default function KnowledgeAdminPage() {
       alert('Failed to add source')
     } finally {
       setAdding(false)
+    }
+  }
+
+  const startSiteCrawl = async () => {
+    if (!crawlConfig.baseUrl) {
+      alert('Please enter a base URL to crawl')
+      return
+    }
+
+    setCrawling(true)
+    setCrawlProgress({
+      isActive: true,
+      currentUrl: crawlConfig.baseUrl,
+      foundUrls: 0,
+      processedUrls: 0,
+      savedEntries: 0,
+      errors: 0,
+      status: 'Starting crawl...'
+    })
+
+    try {
+      const response = await fetch('/api/knowledge/crawl-site', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(crawlConfig)
+      })
+
+      if (response.ok) {
+        // Start polling for progress
+        const pollProgress = setInterval(async () => {
+          try {
+            const progressResponse = await fetch('/api/knowledge/crawl-progress')
+            if (progressResponse.ok) {
+              const progressData = await progressResponse.json()
+              setCrawlProgress(progressData)
+              
+              if (!progressData.isActive) {
+                clearInterval(pollProgress)
+                setCrawling(false)
+                fetchKnowledge() // Refresh knowledge list
+                alert(`Crawl completed!\nProcessed: ${progressData.processedUrls} pages\nSaved: ${progressData.savedEntries} entries\nErrors: ${progressData.errors}`)
+              }
+            }
+          } catch (error) {
+            console.error('Error polling progress:', error)
+          }
+        }, 2000) // Poll every 2 seconds
+
+        // Stop polling after 10 minutes max
+        setTimeout(() => {
+          clearInterval(pollProgress)
+          if (crawling) {
+            setCrawling(false)
+            setCrawlProgress(null)
+          }
+        }, 600000)
+
+      } else {
+        const error = await response.json()
+        alert(`Error starting crawl: ${error.error}`)
+        setCrawling(false)
+        setCrawlProgress(null)
+      }
+    } catch (error) {
+      console.error('Error starting crawl:', error)
+      alert('Failed to start site crawl')
+      setCrawling(false)
+      setCrawlProgress(null)
     }
   }
 
@@ -226,9 +317,9 @@ export default function KnowledgeAdminPage() {
           </p>
         </div>
 
-        {/* Add Source Section */}
+        {/* Add Single Source Section */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">📚 Add Reliable Source</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">📚 Add Single Reliable Source</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -302,10 +393,173 @@ export default function KnowledgeAdminPage() {
               </>
             ) : (
               <>
-                ➕ Add Source
+                ➕ Add Single Source
               </>
             )}
           </button>
+        </div>
+
+        {/* Site Crawler Section */}
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg shadow-lg p-6 mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">🕷️ Intelligent Site Crawler</h2>
+          <p className="text-gray-600 mb-6">
+            🧠 <strong>Train the AI comprehensively</strong> by crawling entire websites. The AI will extract, categorize, and learn from all pages found!
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Base URL *
+              </label>
+              <input
+                type="url"
+                value={crawlConfig.baseUrl}
+                onChange={(e) => setCrawlConfig({...crawlConfig, baseUrl: e.target.value})}
+                placeholder="https://site.com/documentation"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Pages
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={crawlConfig.maxPages}
+                onChange={(e) => setCrawlConfig({...crawlConfig, maxPages: parseInt(e.target.value)})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Depth
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="5"
+                value={crawlConfig.maxDepth}
+                onChange={(e) => setCrawlConfig({...crawlConfig, maxDepth: parseInt(e.target.value)})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Include Patterns (optional)
+              </label>
+              <input
+                type="text"
+                value={crawlConfig.includePatterns}
+                onChange={(e) => setCrawlConfig({...crawlConfig, includePatterns: e.target.value})}
+                placeholder="/docs/,/guides/,/tutorials/"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Exclude Patterns (optional)
+              </label>
+              <input
+                type="text"
+                value={crawlConfig.excludePatterns}
+                onChange={(e) => setCrawlConfig({...crawlConfig, excludePatterns: e.target.value})}
+                placeholder="/admin/,/login/,/contact/"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reliability Score
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={crawlConfig.reliability_score}
+                onChange={(e) => setCrawlConfig({...crawlConfig, reliability_score: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-center text-sm text-gray-600 mt-1">
+                {crawlConfig.reliability_score}/10
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 mb-4">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={crawlConfig.onlyDomain}
+                onChange={(e) => setCrawlConfig({...crawlConfig, onlyDomain: e.target.checked})}
+                className="mr-2"
+              />
+              <span className="text-sm text-gray-700">Only crawl same domain</span>
+            </label>
+          </div>
+
+          <button
+            onClick={startSiteCrawl}
+            disabled={crawling || !crawlConfig.baseUrl}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-3 rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+          >
+            {crawling ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                Crawling Site...
+              </>
+            ) : (
+              <>
+                🚀 Start Intelligent Site Crawl
+              </>
+            )}
+          </button>
+
+          {crawlProgress && (
+            <div className="mt-6 bg-white rounded-lg p-4 border border-purple-200">
+              <h3 className="font-semibold text-gray-900 mb-3">🕷️ Crawl Progress</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Status:</span>
+                  <span className="font-medium text-purple-600">{crawlProgress.status}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Current URL:</span>
+                  <span className="font-mono text-xs text-gray-600 truncate max-w-xs">{crawlProgress.currentUrl}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Found URLs:</span>
+                  <span className="font-medium">{crawlProgress.foundUrls}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Processed:</span>
+                  <span className="font-medium">{crawlProgress.processedUrls}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Saved Entries:</span>
+                  <span className="font-medium text-green-600">{crawlProgress.savedEntries}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Errors:</span>
+                  <span className="font-medium text-red-600">{crawlProgress.errors}</span>
+                </div>
+                {crawlProgress.foundUrls > 0 && (
+                  <div className="mt-3">
+                    <div className="bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(crawlProgress.processedUrls / crawlProgress.foundUrls) * 100}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 text-center">
+                      {Math.round((crawlProgress.processedUrls / crawlProgress.foundUrls) * 100)}% Complete
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Knowledge Entries */}
