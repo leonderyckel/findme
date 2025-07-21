@@ -1,39 +1,37 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
-import toast from 'react-hot-toast'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
-interface User {
+export interface User {
   id: string
   email: string
   username: string
   displayName: string
-  avatar?: string
+  avatar?: string | null
   bio?: string
-  isSeller: boolean
-  isVerified: boolean
+  isVerified?: boolean
+  isSeller?: boolean
+  isAdmin?: boolean
+  createdAt: string
+  updatedAt?: string
 }
 
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<boolean>
-  register: (email: string, password: string, username: string, displayName: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  refreshUser: () => Promise<void>
+  register: (userData: {
+    email: string
+    password: string
+    username: string
+    displayName: string
+  }) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
-}
-
-export default function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -44,103 +42,105 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const checkAuth = async () => {
     try {
       const response = await fetch('/api/auth/me', {
-        credentials: 'include'
+        method: 'GET',
+        credentials: 'include',
       })
       
       if (response.ok) {
         const data = await response.json()
-        setUser(data.user)
+        // Ensure all fields are properly handled with null checks
+        const userData: User = {
+          id: data.user.id || data.user._id,
+          email: data.user.email || '',
+          username: data.user.username || '',
+          displayName: data.user.displayName || data.user.username || 'User',
+          avatar: data.user.avatar || null,
+          bio: data.user.bio || '',
+          isVerified: data.user.isVerified || false,
+          isSeller: data.user.isSeller || false,
+          isAdmin: data.user.isAdmin || false,
+          createdAt: data.user.createdAt || new Date().toISOString(),
+          updatedAt: data.user.updatedAt || data.user.createdAt || new Date().toISOString()
+        }
+        setUser(userData)
+      } else {
+        setUser(null)
       }
     } catch (error) {
-      console.error('Auth check failed:', error)
+      console.error('Auth check error:', error)
+      setUser(null)
     } finally {
       setLoading(false)
     }
   }
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include'
-      })
+  const login = async (email: string, password: string) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+      credentials: 'include',
+    })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data.user)
-        toast.success('Login successful!')
-        return true
-      } else {
-        toast.error(data.error || 'Login failed')
-        return false
-      }
-    } catch (error) {
-      toast.error('Login failed. Please try again.')
-      return false
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Login failed')
     }
-  }
 
-  const register = async (email: string, password: string, username: string, displayName: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, username, displayName }),
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data.user)
-        toast.success('Registration successful!')
-        return true
-      } else {
-        toast.error(data.error || 'Registration failed')
-        return false
-      }
-    } catch (error) {
-      toast.error('Registration failed. Please try again.')
-      return false
-    }
+    // Refresh user data after login
+    await checkAuth()
   }
 
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
       })
-      setUser(null)
-      toast.success('Logged out successfully')
     } catch (error) {
-      toast.error('Logout failed')
+      console.error('Logout error:', error)
+    } finally {
+      setUser(null)
     }
   }
 
-  const refreshUser = async () => {
+  const register = async (userData: {
+    email: string
+    password: string
+    username: string
+    displayName: string
+  }) => {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+      credentials: 'include',
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Registration failed')
+    }
+
+    // Refresh user data after registration
     await checkAuth()
   }
 
-  const value = {
-    user,
-    loading,
-    login,
-    register,
-    logout,
-    refreshUser
-  }
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, loading, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
 } 
