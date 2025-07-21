@@ -18,7 +18,8 @@ export async function POST(
 
     const { type } = await request.json() // 'up', 'down', or 'remove'
 
-    if (!['up', 'down', 'remove'].includes(type)) {
+    const validTypes = ['up', 'down', 'remove']
+    if (!validTypes.includes(type)) {
       return NextResponse.json(
         { error: 'Invalid vote type' },
         { status: 400 }
@@ -38,8 +39,8 @@ export async function POST(
     const userId = userPayload.userId
 
     // Remove existing votes
-    post.upvotes = post.upvotes.filter(id => id.toString() !== userId)
-    post.downvotes = post.downvotes.filter(id => id.toString() !== userId)
+    post.upvotes = post.upvotes.filter((id: any) => id.toString() !== userId)
+    post.downvotes = post.downvotes.filter((id: any) => id.toString() !== userId)
 
     // Add new vote if not removing
     if (type === 'up') {

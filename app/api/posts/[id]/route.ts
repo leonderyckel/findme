@@ -27,8 +27,8 @@ export async function GET(
     return NextResponse.json({
       post: {
         ...post,
-        upvoteCount: post.upvotes?.length || 0,
-        downvoteCount: post.downvotes?.length || 0,
+        upvoteCount: (post as any).upvotes?.length || 0,
+        downvoteCount: (post as any).downvotes?.length || 0,
         upvotes: undefined,
         downvotes: undefined
       }
@@ -91,9 +91,9 @@ export async function PATCH(
     return NextResponse.json({
       message: 'Post updated successfully',
       post: {
-        ...updatedPost.toObject(),
-        upvoteCount: updatedPost.upvotes?.length || 0,
-        downvoteCount: updatedPost.downvotes?.length || 0,
+        ...(updatedPost as any).toObject(),
+        upvoteCount: (updatedPost as any).upvotes?.length || 0,
+        downvoteCount: (updatedPost as any).downvotes?.length || 0,
         upvotes: undefined,
         downvotes: undefined
       }

@@ -62,7 +62,12 @@ export async function POST(request: NextRequest) {
 
     // Simple keyword matching for mock responses
     const lowerMessage = message.toLowerCase()
-    let response = {
+    let response: {
+      message: string
+      parts: any[]
+      installation: string | null
+      tips: string | null
+    } = {
       message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for?",
       parts: [],
       installation: null,
