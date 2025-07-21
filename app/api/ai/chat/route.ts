@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb'
 import Part from '@/models/Part'
 import { getUserFromRequest } from '@/lib/auth'
 import OpenAI from 'openai'
+import { webSearchService, SearchResult } from '@/lib/webSearch'
 
 // Force dynamic rendering for this API route
 export const dynamic = 'force-dynamic'
@@ -52,36 +53,75 @@ async function searchPartsInDatabase(query: string) {
   }
 }
 
-async function getAIResponse(userMessage: string, foundParts: any[] = []) {
-  const systemPrompt = `You are an expert vehicle parts assistant. Your role is to help users find the right parts for their vehicles and provide installation guidance.
+async function searchWebForParts(query: string): Promise<SearchResult[]> {
+  try {
+    // Extract vehicle info for better targeting
+    const vehicleInfo = webSearchService.extractVehicleInfo(query)
+    
+    // Search with enhanced targeting
+    const webResults = await webSearchService.searchParts(query, {
+      maxResults: 8,
+      includePrice: true,
+      vehicleInfo
+    })
 
-Guidelines:
-- Be helpful and knowledgeable about automotive and motorcycle parts
-- Provide specific part recommendations when possible
+    return webResults
+  } catch (error) {
+    console.error('Web search error:', error)
+    return []
+  }
+}
+
+async function getEnhancedAIResponse(
+  userMessage: string, 
+  foundParts: any[] = [], 
+  webResults: SearchResult[] = []
+) {
+  const webResultsText = webResults.length > 0 
+    ? `\n\nRECENT WEB SEARCH RESULTS:\n${webResults.map(result => 
+        `• ${result.title}\n  Supplier: ${result.supplier || 'Unknown'}\n  Price: ${result.price || 'Not specified'}\n  URL: ${result.url}\n  Description: ${result.description}`
+      ).join('\n\n')}`
+    : ''
+
+  const systemPrompt = `You are an expert vehicle parts assistant with access to real-time web search capabilities. Your role is to help users find the right parts for their vehicles and provide comprehensive guidance.
+
+**Your capabilities:**
+- Expert knowledge of automotive and motorcycle parts
+- Access to live web search results from major parts suppliers
+- Database of catalogued parts
+- Installation guidance and safety recommendations
+- Price comparison and supplier recommendations
+
+**Guidelines:**
+- Provide specific part recommendations with real pricing when available
 - Include installation tips and safety warnings
-- Suggest where to buy parts (online retailers, local shops)
-- If you don't know something specific, be honest about it
-- Always prioritize safety in your recommendations
+- Reference web search results when they contain relevant parts/pricing
+- Suggest multiple suppliers for price comparison
+- Be honest about limitations and recommend professional help when needed
+- Always prioritize safety in recommendations
 
-The user's database contains these relevant parts: ${JSON.stringify(foundParts)}
+**Available data sources:**
+1. Internal parts database: ${JSON.stringify(foundParts)}
+2. Live web search results: ${webResultsText}
 
-Format your response to include:
-1. A helpful answer to their question
-2. Specific part recommendations if relevant
-3. Basic installation guidance if requested
-4. Safety tips and considerations
-5. Suggested suppliers or where to find parts
+**Instructions:**
+- Analyze the user's query for vehicle make/model/year if provided
+- Combine database and web results for comprehensive recommendations
+- Provide specific part numbers and prices when available
+- Include direct purchase links from the web results
+- Give installation guidance appropriate to the user's skill level
+- Mention safety considerations and tools needed
 
-Keep responses concise but informative.`
+Keep responses informative but concise. Structure your response with clear sections for parts, pricing, installation, and safety tips.`
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-turbo-preview", // Upgraded to GPT-4 Turbo
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage }
       ],
-      max_tokens: 800,
+      max_tokens: 1200, // Increased for more detailed responses
       temperature: 0.7,
     })
 
@@ -89,6 +129,32 @@ Keep responses concise but informative.`
   } catch (error) {
     console.error('OpenAI API error:', error)
     return null
+  }
+}
+
+async function parseAIResponseStructure(aiResponse: string, webResults: SearchResult[]) {
+  // Extract structured information from AI response
+  let installation = null
+  let tips = null
+  let recommendedParts = webResults
+
+  // Look for installation instructions
+  const installationMatch = aiResponse.match(/(?:installation|install|replace|procedure)[\s\S]*?(?=\n\n|$)/i)
+  if (installationMatch) {
+    installation = installationMatch[0]
+  }
+
+  // Look for tips or warnings
+  const tipsMatch = aiResponse.match(/(?:tip|warning|safety|important|note)[\s\S]*?(?=\n\n|$)/i)
+  if (tipsMatch) {
+    tips = tipsMatch[0]
+  }
+
+  return {
+    message: aiResponse,
+    parts: recommendedParts,
+    installation,
+    tips
   }
 }
 
@@ -111,63 +177,54 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Search for relevant parts in database
+    // Step 1: Search internal database
     const foundParts = await searchPartsInDatabase(message)
+
+    // Step 2: Search web for current parts/pricing
+    const webResults = await searchWebForParts(message)
 
     let response: {
       message: string
       parts: any[]
+      webResults?: SearchResult[]
       installation: string | null
       tips: string | null
     }
 
-    // Try OpenAI API first
+    // Step 3: Get enhanced AI response with all data
     if (process.env.OPENAI_API_KEY) {
-      const aiResponse = await getAIResponse(message, foundParts)
+      const aiResponse = await getEnhancedAIResponse(message, foundParts, webResults)
       
       if (aiResponse) {
-        // Parse AI response to extract structured information
-        let installation = null
-        let tips = null
+        const structuredResponse = await parseAIResponseStructure(aiResponse, webResults)
         
-        // Look for installation instructions in the response
-        if (aiResponse.toLowerCase().includes('install') || aiResponse.toLowerCase().includes('replace')) {
-          const installMatch = aiResponse.match(/(?:installation|install|replace)[\s\S]*?(?=\n\n|\.|$)/i)
-          if (installMatch) {
-            installation = installMatch[0]
-          }
-        }
-        
-        // Look for tips or warnings
-        if (aiResponse.toLowerCase().includes('tip') || aiResponse.toLowerCase().includes('warning') || aiResponse.toLowerCase().includes('safety')) {
-          const tipMatch = aiResponse.match(/(?:tip|warning|safety|important)[\s\S]*?(?=\n\n|\.|$)/i)
-          if (tipMatch) {
-            tips = tipMatch[0]
-          }
-        }
-
         response = {
-          message: aiResponse,
-          parts: foundParts,
-          installation,
-          tips
+          ...structuredResponse,
+          webResults, // Include web results separately for UI
+          parts: foundParts // Keep database parts separate
         }
       } else {
-        // Fallback to mock response if OpenAI fails
-        response = getFallbackResponse(message, foundParts)
+        // Fallback if AI fails
+        response = getFallbackResponse(message, foundParts, webResults)
       }
     } else {
-      // No OpenAI API key, use fallback
-      response = getFallbackResponse(message, foundParts)
+      // No OpenAI API key, use enhanced fallback with web results
+      response = getFallbackResponse(message, foundParts, webResults)
     }
 
     return NextResponse.json({
       response: response.message,
       parts: response.parts || [],
+      webResults: response.webResults || [],
       installation: response.installation,
       tips: response.tips,
       timestamp: new Date().toISOString(),
-      aiPowered: !!process.env.OPENAI_API_KEY
+      aiPowered: !!process.env.OPENAI_API_KEY,
+      webSearchEnabled: true,
+      sources: {
+        database: foundParts.length,
+        web: webResults.length
+      }
     })
   } catch (error) {
     console.error('AI chat error:', error)
@@ -178,13 +235,27 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getFallbackResponse(message: string, foundParts: any[]) {
+function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = []) {
   const lowerMessage = message.toLowerCase()
   
-  if (foundParts.length > 0) {
+  if (foundParts.length > 0 || webResults.length > 0) {
+    let responseMessage = `I found information for your query:`
+    
+    if (foundParts.length > 0) {
+      responseMessage += `\n\nFrom our database: ${foundParts.length} catalogued parts`
+    }
+    
+    if (webResults.length > 0) {
+      responseMessage += `\n\nFrom web search: ${webResults.length} current listings with prices`
+      responseMessage += `\n\nTop recommendations:\n${webResults.slice(0, 3).map(result => 
+        `• ${result.title} - ${result.supplier} ${result.price ? `($${result.price})` : ''}`
+      ).join('\n')}`
+    }
+
     return {
-      message: `I found ${foundParts.length} relevant parts in our database for your query. Here are the details:`,
+      message: responseMessage,
       parts: foundParts,
+      webResults,
       installation: "Please refer to your vehicle's service manual for specific installation procedures.",
       tips: "Always use quality parts and follow proper torque specifications for safety."
     }
@@ -193,14 +264,16 @@ function getFallbackResponse(message: string, foundParts: any[]) {
   // Check for key phrases in mock responses
   if (lowerMessage.includes('cam chain tensioner') || lowerMessage.includes('cct')) {
     return {
-      message: "I found some cam chain tensioner options for your bike. Here are the compatible parts and installation guidance:",
-      ...mockResponses['cam chain tensioner']
+      message: "I found some cam chain tensioner options. Let me search for current pricing and availability:",
+      ...mockResponses['cam chain tensioner'],
+      webResults
     }
   }
   
   return {
-    message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for?",
+    message: "I'd be happy to help you find the right parts! Could you provide more details about your vehicle (make, model, year) and the specific part you're looking for? I can search our database and current online listings for the best options.",
     parts: [],
+    webResults,
     installation: null,
     tips: null
   }
