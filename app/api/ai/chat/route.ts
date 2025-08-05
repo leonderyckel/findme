@@ -94,27 +94,43 @@ function extractUserPreferences(messages: any[]): any {
   
   const allText = messages.map(m => m.content).join(' ').toLowerCase()
   
-  // Common vehicle makes
-  const makes = ['honda', 'yamaha', 'kawasaki', 'suzuki', 'bmw', 'harley', 'ducati', 'ford', 'toyota', 'bmw', 'mercedes', 'audi']
-  for (const make of makes) {
-    if (allText.includes(make)) {
-      preferences.vehicleMake = make
-      break
-    }
+  // Enhanced vehicle make detection
+  const makeRegex = /\b(honda|yamaha|kawasaki|suzuki|bmw|harley|ducati|ford|toyota|mercedes|audi|nissan|mazda|subaru|volkswagen|vw|lexus|acura|infiniti|cadillac|chevrolet|chevy|gmc|dodge|ram|jeep|chrysler)\b/gi
+  const makeMatches = allText.match(makeRegex)
+  if (makeMatches) {
+    preferences.vehicleMake = makeMatches[makeMatches.length - 1] // Use the most recent mention
   }
   
-  // Extract year (simple regex)
-  const yearMatch = allText.match(/\b(19|20)\d{2}\b/)
-  if (yearMatch) {
-    preferences.vehicleYear = parseInt(yearMatch[0])
+  // Enhanced model detection
+  const modelRegex = /\b(civic|accord|camry|corolla|f150|f-150|mustang|focus|fiesta|explorer|cb750|cb650|cb500|cbr|ninja|gsxr|r6|r1|m3|m5|x3|x5|3 series|5 series|e46|e90|e92|prius|rav4|highlander|pilot|crv|cr-v|hrv|hr-v)\b/gi
+  const modelMatches = allText.match(modelRegex)
+  if (modelMatches) {
+    preferences.vehicleModel = modelMatches[modelMatches.length - 1] // Use the most recent mention
+  }
+  
+  // Enhanced year detection
+  const yearRegex = /\b(19[89]\d|20[0-2]\d)\b/g
+  const yearMatches = allText.match(yearRegex)
+  if (yearMatches) {
+    const years = yearMatches.map(y => parseInt(y))
+    preferences.vehicleYear = Math.max(...years) // Use the most recent/highest year
   }
   
   // Experience level indicators
-  if (allText.includes('beginner') || allText.includes('new to') || allText.includes('first time')) {
+  if (allText.includes('beginner') || allText.includes('new to') || allText.includes('first time') || allText.includes('never done')) {
     preferences.experienceLevel = 'beginner'
-  } else if (allText.includes('expert') || allText.includes('professional') || allText.includes('mechanic')) {
+  } else if (allText.includes('expert') || allText.includes('professional') || allText.includes('mechanic') || allText.includes('years of experience')) {
     preferences.experienceLevel = 'expert'
   }
+  
+  // Interest detection
+  const interests = []
+  if (/\b(brake|brakes)\b/i.test(allText)) interests.push('brakes')
+  if (/\b(engine|motor|swap)\b/i.test(allText)) interests.push('engine')
+  if (/\b(suspension|shock|strut)\b/i.test(allText)) interests.push('suspension')
+  if (/\b(electrical|wiring|lights)\b/i.test(allText)) interests.push('electrical')
+  if (/\b(exhaust|muffler|pipe)\b/i.test(allText)) interests.push('exhaust')
+  preferences.interests = interests
   
   return preferences
 }
@@ -243,64 +259,59 @@ async function getEnhancedAIResponse(
       ).join('\n')}`
     : ''
 
-  const systemPrompt = `You are Alex, a seasoned mechanic with 15 years of experience who loves helping people with their vehicles. You're known for being direct, asking good questions, and not wasting people's time with irrelevant info.
+  const systemPrompt = `You are Alex, a seasoned mechanic with 15 years of experience who loves helping people with their vehicles. You're known for being direct, asking good questions, and remembering what people tell you.
 
-**CRITICAL: THINK BEFORE YOU SPEAK**
+**CRITICAL: REMEMBER CONVERSATION CONTEXT**
 
-Before responding, you MUST analyze:
-1. What is the user ACTUALLY trying to accomplish?
-2. What information do they really need vs. what's just noise?
-3. What questions should I ask to help them better?
-4. Is this person looking for specific parts, general advice, or just exploring?
+${conversationHistory.length > 0 ? 
+  `**IMPORTANT - We've been talking! Here's our conversation context:**
+  ${conversationHistory.slice(-3).map(msg => `${msg.role.toUpperCase()}: ${msg.content.substring(0, 150)}...`).join('\n')}` : 
+  'This is our first conversation together.'}
 
-**YOUR PERSONALITY:**
-- Talk like a real person having a conversation
-- Ask follow-up questions when something's unclear
-- Don't dump information - be selective and relevant
-- React naturally: "Hmm, that's interesting..." or "Wait, let me understand..."
-- Admit when you need more context: "Hold on, what exactly are you trying to fix?"
-- Be skeptical of irrelevant results: "Most of this stuff doesn't seem related to what you need"
+**USER'S VEHICLE & CONTEXT:**
+- Vehicle: ${userPreferences.vehicleMake || 'Not specified'} ${userPreferences.vehicleModel || ''} ${userPreferences.vehicleYear || ''}
+- Experience: ${userPreferences.experienceLevel || 'intermediate'}
+- Interests: ${userPreferences.interests?.join(', ') || 'General automotive'}
+- Search History: ${conversationHistory.slice(-3).map(msg => msg.content.substring(0, 50)).join(' | ') || 'None'}
+
+**HOW TO USE CONVERSATION MEMORY:**
+1. **Reference previous messages** - "As we discussed about your CB750..." or "Building on your BMW question..."
+2. **Build on context** - If they mentioned a vehicle before, don't ask again
+3. **Connect topics** - Link current questions to past discussions
+4. **Remember specifics** - If they said 2015 Honda Civic, keep that in mind
+5. **Follow-up appropriately** - "give me tips" should relate to what we've been discussing
+
+**BEFORE YOU RESPOND, ASK YOURSELF:**
+1. What vehicle were we talking about?
+2. What specific problem or part was mentioned?
+3. Is this a follow-up question to our previous discussion?
+4. Can I build on what they told me before?
 
 **CONVERSATION RULES:**
-1. **START WITH UNDERSTANDING**: If the query is vague (like just "honda"), ask what they're actually trying to do
-2. **BE SELECTIVE**: Only mention results that are genuinely helpful for their specific situation
-3. **EXPLAIN YOUR REASONING**: "I'm focusing on X because Y, but ignoring Z because it's not relevant"
-4. **ASK CLARIFYING QUESTIONS**: "Are you looking for parts for a specific problem, or just browsing?"
-5. **CONNECT THE DOTS**: Link information together logically instead of listing separately
-
-**USER CONTEXT:**
-- Vehicle: ${userPreferences.vehicleMake || 'Not specified'} ${userPreferences.vehicleModel || ''} ${userPreferences.vehicleYear || ''}
-- Experience: ${userPreferences.experienceLevel || 'Not specified'}
-- Past conversation: ${conversationHistory.length > 0 ? 'We\'ve been talking about automotive stuff' : 'First conversation'}
+1. **USE CONTEXT FIRST**: If we've been talking about a Honda CB750, and they ask "give me tips", give CB750-specific tips
+2. **REMEMBER DETAILS**: Don't ask for info they already gave you
+3. **BUILD CONVERSATIONS**: Connect current query to previous messages
+4. **BE SPECIFIC**: Use their vehicle details when giving advice
+5. **ASK SMART FOLLOW-UPS**: Based on conversation history, suggest next logical steps
 
 **AVAILABLE INFORMATION:**
-Knowledge Base: ${knowledgeText ? 'I have some verified technical guides' : 'No specific guides found'}
-Web Results: ${webResultsText ? 'Found some current listings and info online' : 'No current web results'}
-Database Parts: ${foundParts.length > 0 ? `Found ${foundParts.length} parts in our catalog` : 'No parts in our database match'}
+Knowledge Base: ${knowledgeText ? 'I have verified technical guides available' : 'No specific guides found'}
+Web Results: ${webResultsText ? 'Found current market information' : 'No current web results'}
+Database Parts: ${foundParts.length > 0 ? `Found ${foundParts.length} relevant parts` : 'No direct parts matches'}
 
-**HOW TO RESPOND:**
+**RESPONSE STYLE:**
+- Start by acknowledging our conversation context when relevant
+- Reference their specific vehicle when you know it
+- Connect current question to previous discussions
+- Give targeted advice based on what you know about their situation
+- Ask clarifying questions only when truly needed
 
-BAD Example (robotic):
-"Great! I found some helpful information for your query. Let me walk you through what I discovered: 🧠 From our expert knowledge base (5 verified entries)..."
+**EXAMPLE GOOD RESPONSES:**
+- "Based on our CB750 discussion, here are the specific tips for cam chain tensioner replacement..."
+- "For your 2015 Civic engine mount job we talked about, here's what to watch out for..."
+- "Following up on your BMW question - here are the installation steps..."
 
-GOOD Example (conversational):
-"Hmm, you just said 'honda' - that's pretty broad! Are you looking for parts for a specific Honda vehicle, trying to troubleshoot a problem, or just browsing around? 
-
-I did find some stuff, but I want to make sure I'm pointing you in the right direction. What's your Honda and what's going on with it?"
-
-**RESPONSE STRUCTURE:**
-1. **Acknowledge & Analyze**: Show you understand (or need to understand) their situation
-2. **Ask Questions**: If unclear, ask what they really need
-3. **Be Selective**: Only share the most relevant info
-4. **Explain Why**: Tell them why you're recommending specific things
-5. **Next Steps**: What should they do with this info?
-
-**CONVERSATION MEMORY:**
-${conversationHistory.length > 0 ? 
-  `Previous context: ${conversationHistory.slice(-2).map(msg => `${msg.role}: ${msg.content.substring(0, 100)}`).join(' | ')}` : 
-  'This is our first conversation'}
-
-Remember: You're having a real conversation with someone who needs help. Don't be a search engine - be a helpful human who thinks before they speak and cares about solving the actual problem.`
+Remember: You're having an ongoing conversation with someone. Use what they've told you before!`
 
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -451,9 +462,21 @@ export async function POST(request: NextRequest) {
                       /\b(19|20)\d{2}\b/.test(message) ||
                       /\b(civic|accord|camry|corolla|f150|mustang|cb750)\b/i.test(message)
     
+    // Allow follow-up questions if we have conversation context
+    const isFollowUpQuestion = /\b(tips|advice|help|guide|how to|install|replace|fix)\b/i.test(message) && 
+                              userMemory.messages.length > 2 &&
+                              userMemory.userPreferences.vehicleMake
+    
+    const hasConversationContext = userMemory.messages.length > 0 && 
+                                  (userMemory.userPreferences.vehicleMake || 
+                                   userMemory.searchHistory.some(search => 
+                                     /\b(19|20)\d{2}\b/.test(search) || 
+                                     /\b(civic|accord|cb750|m3|camry)\b/i.test(search)
+                                   ))
+    
     let proactiveSearches: string[] = []
     
-    if (!isVague && isSpecific) {
+    if (!isVague && (isSpecific || isFollowUpQuestion || hasConversationContext)) {
       // Only search web for specific, clear queries
       webResults = await searchWebForParts(message)
       
@@ -580,7 +603,7 @@ export async function POST(request: NextRequest) {
 function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = [], knowledgeBase: any[] = []) {
   const lowerMessage = message.toLowerCase()
   
-  // Much more aggressive vague query detection
+  // Much more aggressive vague query detection, but consider conversation context
   const isVague = 
     lowerMessage.length < 15 || // Very short queries
     lowerMessage.includes('information about') ||
@@ -591,11 +614,105 @@ function getFallbackResponse(message: string, foundParts: any[], webResults: Sea
     /\b(want|need|looking for)\s+(info|information|help)\b/i.test(message) ||
     lowerMessage.split(' ').length < 4 && !lowerMessage.includes('tensioner') ||
     lowerMessage.includes('how to install') && !lowerMessage.includes('brake') && !lowerMessage.includes('filter') && !lowerMessage.includes('part')
-  
+
   const isSpecificPart = /\b(brake pad|oil filter|spark plug|air filter|cam chain tensioner|clutch plate|timing belt|water pump|alternator|starter)\b/i.test(message)
   const isSpecificProblem = /\b(won't start|making noise|overheating|leaking|grinding|squealing|rough idle)\b/i.test(message)
-  const hasVehicleDetails = /\b(19|20)\d{2}\b/.test(message) || /\b(civic|accord|camry|corolla|f150|mustang)\b/i.test(message)
+  const hasVehicleDetails = /\b(19|20)\d{2}\b/.test(message) || /\b(civic|accord|camry|corolla|f150|mustang|cb750|m3|m1)\b/i.test(message)
   
+  // Check for follow-up questions (tips, advice, etc.)
+  const isFollowUpRequest = /\b(tips|advice|help|guide|more info|tell me more)\b/i.test(message)
+  
+  // Special handling for follow-up requests
+  if (isFollowUpRequest && !isVague) {
+    return {
+      message: `Great question! Here are some general tips:
+
+🔧 **Installation Best Practices:**
+• Always disconnect the battery before starting electrical work
+• Use the right tools - cheap tools break and can damage parts
+• Take photos before disassembly so you remember how it goes back together
+• Work in good lighting and have a clean workspace
+• Keep track of bolts and small parts in labeled containers
+
+⚠️ **Safety First:**
+• Jack stands, never just a jack for safety
+• Safety glasses when working under the hood
+• Let the engine cool down before working on cooling system
+• Use proper torque specifications - too tight can break, too loose can fail
+
+💰 **Money-Saving Tips:**
+• Compare OEM vs aftermarket - sometimes aftermarket is 80% as good for 50% the price
+• Buy in bulk for maintenance items (oil, filters)
+• YouTube is your friend for visual guides
+• Don't be afraid to ask for help - better safe than sorry
+
+🛠️ **Common Mistakes to Avoid:**
+• Rushing the job - take your time
+• Not having all parts before starting
+• Forgetting to check compatibility with your specific year/trim
+• Skipping the test drive after repairs
+
+Need specific advice for a particular repair? Just ask! 🎯`,
+      parts: foundParts,
+      knowledgeBase,
+      webResults,
+      installation: `**General Installation Approach:**
+
+1. **Preparation Phase:**
+   - Gather all tools and parts
+   - Read through entire procedure first
+   - Ensure proper lighting and workspace
+   - Have service manual or reliable guide ready
+
+2. **Safety Setup:**
+   - Disconnect battery negative terminal
+   - Use proper jack stands if lifting vehicle
+   - Wear safety glasses and gloves
+   - Let engine cool if working on hot components
+
+3. **Documentation:**
+   - Take photos before disassembly
+   - Note torque specifications
+   - Keep hardware organized
+   - Mark electrical connections
+
+4. **Installation:**
+   - Clean mating surfaces
+   - Use appropriate sealants/gaskets
+   - Torque to specification in proper sequence
+   - Double-check all connections
+
+5. **Testing:**
+   - Reconnect battery
+   - Check for leaks or unusual noises
+   - Test drive if applicable
+   - Monitor for first few days`,
+      tips: `**Pro Tips from Experienced Mechanics:**
+
+🎯 **Before You Start:**
+- Check multiple sources for procedures - manuals can have errors
+- Buy quality parts, especially for safety-critical components
+- Have a backup plan if something goes wrong
+
+🔧 **During Installation:**
+- "Finger tight plus" - don't overtighten everything
+- If it feels wrong, stop and double-check
+- Clean threads prevent galling and ensure proper torque
+
+⚠️ **Common Gotchas:**
+- Some bolts are one-time use (stretch bolts)
+- Direction matters on asymmetric parts
+- Some parts need bedding-in period
+- Always test before putting everything back together
+
+💡 **Professional Secrets:**
+- Penetrating oil is your friend for old bolts
+- Heat helps with stuck components (carefully!)
+- Sometimes the "15-minute job" takes 3 hours - plan accordingly
+- Keep a detailed log of what you've done to your vehicle`
+    }
+  }
+
   if (isVague) {
     // Don't even show web results for vague queries
     return {

@@ -326,38 +326,39 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Installation guide - only if specifically relevant */}
-                      {message.installation && message.installation.length > 100 && (
-                        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
-                          <details className="cursor-pointer">
-                            <summary className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
-                              🔧 Installation guidance available
-                            </summary>
-                            <div className="text-sm mt-2">
-                              <div className="whitespace-pre-wrap bg-white p-3 rounded border text-gray-800">
+                        {/* Installation guide - always show if available */}
+                        {message.installation && (
+                          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                            <h4 className="font-semibold text-yellow-900 mb-3 flex items-center gap-2">
+                              🔧 Installation Guide
+                            </h4>
+                            <div className="text-sm">
+                              <div className="whitespace-pre-wrap bg-white p-4 rounded border text-gray-800 leading-relaxed">
                                 {message.installation}
                               </div>
+                              <p className="text-xs text-yellow-700 mt-2">
+                                💡 Take your time with each step - rushing leads to mistakes!
+                              </p>
                             </div>
-                          </details>
-                        </div>
-                      )}
+                          </div>
+                        )}
 
-                      {/* Tips - only if they're substantial and helpful */}
-                      {message.tips && message.tips.length > 50 && 
-                       !message.tips.includes('Always use quality parts and follow proper torque specifications') && (
-                        <div className="bg-orange-50 border-l-4 border-orange-400 p-3 rounded">
-                          <details className="cursor-pointer">
-                            <summary className="font-semibold text-orange-900 mb-2 flex items-center gap-2">
-                              💡 Pro tips
-                            </summary>
-                            <div className="text-sm mt-2">
-                              <div className="whitespace-pre-wrap bg-white p-3 rounded border text-gray-800">
+                        {/* Tips - always show if available */}
+                        {message.tips && (
+                          <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded">
+                            <h4 className="font-semibold text-orange-900 mb-3 flex items-center gap-2">
+                              💡 Pro Tips & Advice
+                            </h4>
+                            <div className="text-sm">
+                              <div className="whitespace-pre-wrap bg-white p-4 rounded border text-gray-800 leading-relaxed">
                                 {message.tips}
                               </div>
+                              <p className="text-xs text-orange-700 mt-2">
+                                ⚠️ When in doubt, consult a professional - your safety is worth more than any part!
+                              </p>
                             </div>
-                          </details>
-                        </div>
-                      )}
+                          </div>
+                        )}
 
                       {/* Sources summary - simplified */}
                       {message.sources && (
