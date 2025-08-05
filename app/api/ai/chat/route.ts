@@ -34,6 +34,114 @@ const mockResponses = {
   }
 }
 
+// Conversation memory storage (in production, use Redis or database)
+const conversationMemory = new Map<string, {
+  messages: Array<{role: string, content: string, timestamp: string}>,
+  userPreferences: {
+    vehicleMake?: string,
+    vehicleModel?: string,
+    vehicleYear?: number,
+    experienceLevel?: 'beginner' | 'intermediate' | 'expert',
+    interests: string[]
+  },
+  searchHistory: string[],
+  lastActive: string
+}>()
+
+// Intelligent relevance scoring
+function scoreResultRelevance(result: any, userQuery: string, userPreferences: any): number {
+  let score = 0
+  
+  // Base score from title/description match
+  const queryTerms = userQuery.toLowerCase().split(' ')
+  const resultText = `${result.title} ${result.description || ''}`.toLowerCase()
+  
+  queryTerms.forEach(term => {
+    if (resultText.includes(term)) score += 10
+  })
+  
+  // Vehicle-specific scoring
+  if (userPreferences.vehicleMake) {
+    if (resultText.includes(userPreferences.vehicleMake.toLowerCase())) score += 20
+  }
+  if (userPreferences.vehicleModel) {
+    if (resultText.includes(userPreferences.vehicleModel.toLowerCase())) score += 15
+  }
+  
+  // Source reliability scoring
+  if (result.supplier === 'RockAuto') score += 10
+  if (result.supplier === 'eBay' && result.price) score += 5
+  if (result.supplier === 'Amazon') score += 8
+  
+  // Recency scoring for web results
+  if (result.timestamp) {
+    const hoursSinceFound = (Date.now() - new Date(result.timestamp).getTime()) / (1000 * 60 * 60)
+    if (hoursSinceFound < 24) score += 5
+  }
+  
+  return score
+}
+
+// Extract user preferences from conversation
+function extractUserPreferences(messages: any[]): any {
+  const preferences = {
+    vehicleMake: '',
+    vehicleModel: '', 
+    vehicleYear: 0,
+    experienceLevel: 'intermediate' as 'beginner' | 'intermediate' | 'expert',
+    interests: [] as string[]
+  }
+  
+  const allText = messages.map(m => m.content).join(' ').toLowerCase()
+  
+  // Common vehicle makes
+  const makes = ['honda', 'yamaha', 'kawasaki', 'suzuki', 'bmw', 'harley', 'ducati', 'ford', 'toyota', 'bmw', 'mercedes', 'audi']
+  for (const make of makes) {
+    if (allText.includes(make)) {
+      preferences.vehicleMake = make
+      break
+    }
+  }
+  
+  // Extract year (simple regex)
+  const yearMatch = allText.match(/\b(19|20)\d{2}\b/)
+  if (yearMatch) {
+    preferences.vehicleYear = parseInt(yearMatch[0])
+  }
+  
+  // Experience level indicators
+  if (allText.includes('beginner') || allText.includes('new to') || allText.includes('first time')) {
+    preferences.experienceLevel = 'beginner'
+  } else if (allText.includes('expert') || allText.includes('professional') || allText.includes('mechanic')) {
+    preferences.experienceLevel = 'expert'
+  }
+  
+  return preferences
+}
+
+// Generate proactive search queries based on context
+function generateProactiveSearches(userMessage: string, preferences: any): string[] {
+  const searches = []
+  
+  // If asking about a specific part, also search for installation
+  if (userMessage.includes('tensioner') || userMessage.includes('brake') || userMessage.includes('clutch')) {
+    const partName = userMessage.match(/\b(tensioner|brake|clutch|chain|gear|oil|filter|spark plug|tire)\b/i)?.[0]
+    if (partName) {
+      searches.push(`${partName} installation guide ${preferences.vehicleMake || ''}`)
+      searches.push(`${partName} troubleshooting ${preferences.vehicleMake || ''}`)
+      searches.push(`${partName} replacement cost ${preferences.vehicleMake || ''}`)
+    }
+  }
+  
+  // If vehicle-specific, search for common issues
+  if (preferences.vehicleMake && preferences.vehicleModel) {
+    searches.push(`${preferences.vehicleMake} ${preferences.vehicleModel} common problems`)
+    searches.push(`${preferences.vehicleMake} ${preferences.vehicleModel} maintenance schedule`)
+  }
+  
+  return searches.slice(0, 2) // Limit to 2 proactive searches
+}
+
 async function searchPartsInDatabase(query: string) {
   try {
     await connectToDatabase()
@@ -113,11 +221,13 @@ async function getEnhancedAIResponse(
   userMessage: string, 
   foundParts: any[] = [], 
   webResults: SearchResult[] = [],
-  knowledgeBase: any[] = []
+  knowledgeBase: any[] = [],
+  conversationHistory: any[] = [],
+  userPreferences: any
 ) {
   const webResultsText = webResults.length > 0 
     ? `\n\nRECENT WEB SEARCH RESULTS:\n${webResults.map(result => 
-        `• ${result.title}\n  Supplier: ${result.supplier || 'Unknown'}\n  Price: ${result.price || 'Not specified'}\n  URL: ${result.url}\n  Description: ${result.description}`
+        `• ${result.title}\n  Supplier: ${result.supplier || 'Unknown'}\n  Price: ${result.price || 'Not specified'}\n  Relevance Score: ${(result as any).relevanceScore || 'N/A'}\n  URL: ${result.url}\n  Description: ${result.description}`
       ).join('\n\n')}`
     : ''
 
@@ -127,61 +237,84 @@ async function getEnhancedAIResponse(
       ).join('\n\n')}`
     : ''
 
+  const conversationContext = conversationHistory.length > 0
+    ? `\n\nCONVERSATION HISTORY:\n${conversationHistory.slice(-5).map(msg => 
+        `${msg.role.toUpperCase()}: ${msg.content}`
+      ).join('\n')}`
+    : ''
+
   const systemPrompt = `You are a friendly, experienced automotive expert who loves helping people solve car and motorcycle problems. Think of yourself as the knowledgeable mechanic neighbor who always has time to explain things clearly.
 
-**Your personality:**
-- Conversational and approachable - talk like you're having a chat over coffee
-- Explain the "why" behind recommendations, not just the "what"
-- Share context and insights from your experience
-- Use analogies and real-world examples when helpful
-- Acknowledge when something might be tricky or when to seek professional help
-- Celebrate when you find good deals or perfect solutions
+**IMPORTANT - You have conversation memory and user context:**
+- User's Vehicle: ${userPreferences.vehicleMake || 'Not specified'} ${userPreferences.vehicleModel || ''} ${userPreferences.vehicleYear || ''}
+- Experience Level: ${userPreferences.experienceLevel || 'intermediate'}
+- Past Interests: ${userPreferences.interests?.join(', ') || 'General automotive'}
 
-**How to structure your responses:**
-1. **Start conversational**: "Great question!" or "I found some interesting options for you..."
-2. **Explain what you discovered**: Walk through what the data tells us
-3. **Provide context**: Why this part/solution makes sense for their situation
-4. **Give practical advice**: Installation tips, gotchas to watch for, tool requirements
-5. **Suggest next steps**: What to do with this information
+**Your enhanced personality:**
+- Remember what the user told you before - reference previous conversation
+- Adapt your explanations to their experience level (${userPreferences.experienceLevel})
+- Be more specific since you know their vehicle type
+- Ask follow-up questions to help them better
+- Suggest related maintenance or parts they might need
+- Celebrate when you find perfect matches for their specific vehicle
 
-**Guidelines for being helpful:**
-- PRIORITIZE verified knowledge base information (mention why it's reliable)
-- Explain the significance of prices, suppliers, part quality differences
-- Point out red flags or things to verify before buying
-- Connect related information (if they ask about brakes, mention related maintenance)
-- Use specific examples from the data instead of generic advice
-- When you reference sources, explain why they're credible or what to verify
+**How to use conversation context:**
+- Reference previous messages naturally: "As we discussed earlier..." or "Building on what you mentioned about..."
+- Connect current request to past conversations
+- Suggest next logical steps based on conversation flow
+- Point out patterns or related issues from their history
+
+**Enhanced search capabilities:**
+- I performed additional proactive searches based on our conversation
+- Results are now intelligently filtered and scored for relevance
+- Higher relevance scores mean better matches for your specific needs
+- I prioritize results that match your vehicle and experience level
 
 **Available data sources:**
 1. Internal parts database: ${JSON.stringify(foundParts)}
 2. Verified knowledge base (expert-reviewed): ${knowledgeText}
-3. Live web search results (current market): ${webResultsText}
+3. Intelligently filtered web search results: ${webResultsText}
+4. Our conversation history: ${conversationContext}
 
-**Response style:**
-- Start with enthusiasm about what you found
-- Explain the story the data tells (market trends, quality indicators, compatibility)
-- Break down complex information into digestible pieces
-- Use emojis sparingly for key points, not every sentence
-- End with clear next steps or follow-up questions
+**Response style - Enhanced:**
+- Start by acknowledging our ongoing conversation
+- Reference their specific vehicle when relevant
+- Explain why certain results are more relevant than others
+- Ask clarifying questions to continue the conversation
+- Suggest what to discuss next or what information would be helpful
+- Be proactive about related topics they might want to explore
 
-**Example approach:**
-Instead of: "Found 3 parts. Here are the specs..."
-Say: "Great news! I found some solid options for your [specific need]. The most interesting find is [specific part] because [reason]. Here's what makes it a good choice..."
+**Example enhanced approach:**
+"Looking at your ${userPreferences.vehicleMake || 'vehicle'}, and building on what we discussed about [previous topic], I found some interesting options. The top result has a high relevance score because it specifically matches your ${userPreferences.experienceLevel} experience level and your vehicle type..."
 
-Remember: You're not just searching and reporting - you're helping someone solve a real problem with their vehicle. Make them feel confident about their next steps.`
+Remember: You're having an ongoing conversation with someone who trusts your expertise. Make them feel like you remember them and care about solving their specific problems.`
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview", // Upgraded to GPT-4 Turbo
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage }
-      ],
-      max_tokens: 1500, // Increased for more detailed responses with knowledge base
-      temperature: 0.7,
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OpenAI API key not configured')
+    }
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY as string
     })
 
-    return completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response at the moment."
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt
+        },
+        {
+          role: 'user',
+          content: `Current question: ${userMessage}\n\nPlease provide a comprehensive, conversational response that takes into account our conversation history and my vehicle preferences.`
+        }
+      ],
+      max_tokens: 1000,
+      temperature: 0.7
+    })
+
+    return completion.choices[0]?.message?.content || null
   } catch (error) {
     console.error('OpenAI API error:', error)
     return null
@@ -250,6 +383,39 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const userId = userPayload.userId
+    
+    // Get or initialize conversation memory
+    if (!conversationMemory.has(userId)) {
+      conversationMemory.set(userId, {
+        messages: [],
+        userPreferences: {
+          vehicleMake: '',
+          vehicleModel: '',
+          vehicleYear: 0,
+          experienceLevel: 'intermediate',
+          interests: []
+        },
+        searchHistory: [],
+        lastActive: new Date().toISOString()
+      })
+    }
+    
+    const userMemory = conversationMemory.get(userId)!
+    
+    // Add user message to memory
+    userMemory.messages.push({
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    })
+    
+    // Update user preferences from conversation history
+    const updatedPreferences = extractUserPreferences(userMemory.messages)
+    userMemory.userPreferences = { ...userMemory.userPreferences, ...updatedPreferences }
+    userMemory.searchHistory.push(message)
+    userMemory.lastActive = new Date().toISOString()
+
     // Step 1: Search internal database
     const foundParts = await searchPartsInDatabase(message)
 
@@ -258,6 +424,32 @@ export async function POST(request: NextRequest) {
 
     // Step 3: Search web for current parts/pricing
     const webResults = await searchWebForParts(message)
+    
+    // Step 4: Proactive searches based on context
+    const proactiveSearches = generateProactiveSearches(message, userMemory.userPreferences)
+    let proactiveResults: SearchResult[] = []
+    
+    for (const searchQuery of proactiveSearches) {
+      try {
+        const results = await searchWebForParts(searchQuery)
+        proactiveResults.push(...results)
+      } catch (error) {
+        console.error('Proactive search error:', error)
+      }
+    }
+    
+    // Step 5: Intelligent filtering and scoring
+    const allWebResults = [...webResults, ...proactiveResults]
+    const scoredResults = allWebResults.map(result => ({
+      ...result,
+      relevanceScore: scoreResultRelevance(result, message, userMemory.userPreferences)
+    }))
+    
+    // Filter and sort by relevance
+    const filteredResults = scoredResults
+      .filter(result => result.relevanceScore > 15) // Minimum relevance threshold
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, 8) // Top 8 most relevant results
 
     let response: {
       message: string
@@ -266,20 +458,46 @@ export async function POST(request: NextRequest) {
       webResults?: SearchResult[]
       installation: string | null
       tips: string | null
+      conversationContext?: {
+        userPreferences: any
+        proactiveSearchesPerformed: string[]
+        totalResultsFound: number
+        filteredResultsCount: number
+      }
     }
 
-    // Step 4: Get enhanced AI response with all data
+    // Step 6: Get enhanced AI response with all data and conversation context
     if (process.env.OPENAI_API_KEY) {
-      const aiResponse = await getEnhancedAIResponse(message, foundParts, webResults, knowledgeBase)
+      const aiResponse = await getEnhancedAIResponse(
+        message, 
+        foundParts, 
+        filteredResults, 
+        knowledgeBase,
+        userMemory.messages.slice(-10), // Last 10 messages for context
+        userMemory.userPreferences
+      )
       
       if (aiResponse) {
-        const structuredResponse = await parseAIResponseStructure(aiResponse, webResults, knowledgeBase)
+        const structuredResponse = await parseAIResponseStructure(aiResponse, filteredResults, knowledgeBase)
         
         response = {
           ...structuredResponse,
-          webResults, // Include web results separately for UI
-          parts: foundParts // Keep database parts separate
+          webResults: filteredResults, // Include filtered results
+          parts: foundParts,
+          conversationContext: {
+            userPreferences: userMemory.userPreferences,
+            proactiveSearchesPerformed: proactiveSearches,
+            totalResultsFound: allWebResults.length,
+            filteredResultsCount: filteredResults.length
+          }
         }
+        
+        // Add AI response to memory
+        userMemory.messages.push({
+          role: 'assistant',
+          content: structuredResponse.message,
+          timestamp: new Date().toISOString()
+        })
         
         // Update usage count for used knowledge entries
         for (const kb of knowledgeBase) {
@@ -292,11 +510,11 @@ export async function POST(request: NextRequest) {
         
       } else {
         // Fallback if AI fails
-        response = getFallbackResponse(message, foundParts, webResults, knowledgeBase)
+        response = getFallbackResponse(message, foundParts, filteredResults, knowledgeBase)
       }
     } else {
       // No OpenAI API key, use enhanced fallback with all sources
-      response = getFallbackResponse(message, foundParts, webResults, knowledgeBase)
+      response = getFallbackResponse(message, foundParts, filteredResults, knowledgeBase)
     }
 
     return NextResponse.json({
@@ -306,6 +524,7 @@ export async function POST(request: NextRequest) {
       webResults: response.webResults || [],
       installation: response.installation,
       tips: response.tips,
+      conversationContext: response.conversationContext,
       timestamp: new Date().toISOString(),
       aiPowered: !!process.env.OPENAI_API_KEY,
       webSearchEnabled: true,
@@ -313,7 +532,8 @@ export async function POST(request: NextRequest) {
       sources: {
         database: foundParts.length,
         knowledge: knowledgeBase.length,
-        web: webResults.length
+        web: filteredResults.length,
+        proactiveSearches: proactiveSearches.length
       }
     })
   } catch (error) {

@@ -5,7 +5,16 @@ import { useAuth } from '@/components/providers/AuthProvider'
 import Navbar from '@/components/layout/Navbar'
 import PostCard from '@/components/feed/PostCard'
 import CreatePostModal from '@/components/feed/CreatePostModal'
-import { PlusIcon, FunnelIcon } from '@heroicons/react/24/outline'
+import { 
+  PlusIcon, 
+  FunnelIcon, 
+  FireIcon, 
+  SparklesIcon,
+  TrophyIcon,
+  BoltIcon,
+  HeartIcon,
+  BookmarkIcon
+} from '@heroicons/react/24/outline'
 
 interface Post {
   _id: string
@@ -23,7 +32,25 @@ interface Post {
     username: string
     displayName: string
     avatar?: string
+    reputation?: number
+    expertBadges?: string[]
   }
+  aiRecommended?: boolean
+  trending?: boolean
+}
+
+interface TrendingTopic {
+  tag: string
+  postCount: number
+  growth: string
+}
+
+interface UserStats {
+  reputation: number
+  postsCreated: number
+  helpfulAnswers: number
+  badges: string[]
+  level: string
 }
 
 export default function FeedPage() {
@@ -32,7 +59,22 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [category, setCategory] = useState('all')
-  const [sort, setSort] = useState('recent')
+  const [sort, setSort] = useState('smart')
+  const [trendingTopics, setTrendingTopics] = useState<TrendingTopic[]>([
+    { tag: 'brake-pads', postCount: 23, growth: '+15%' },
+    { tag: 'oil-change', postCount: 18, growth: '+8%' },
+    { tag: 'engine-trouble', postCount: 31, growth: '+22%' },
+    { tag: 'honda-cb750', postCount: 12, growth: '+5%' },
+    { tag: 'diy-repair', postCount: 27, growth: '+18%' }
+  ])
+  const [userStats, setUserStats] = useState<UserStats>({
+    reputation: 1250,
+    postsCreated: 8,
+    helpfulAnswers: 23,
+    badges: ['Helper', 'First Post', 'Problem Solver'],
+    level: 'Mechanic Apprentice'
+  })
+  const [showAIRecommendations, setShowAIRecommendations] = useState(true)
 
   useEffect(() => {
     fetchPosts()
@@ -44,11 +86,23 @@ export default function FeedPage() {
       if (category !== 'all') params.append('category', category)
       params.append('sort', sort)
       params.append('limit', '20')
+      if (showAIRecommendations) params.append('aiRecommended', 'true')
 
       const response = await fetch(`/api/posts?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setPosts(data.posts)
+        // Add mock AI recommendations and trending flags
+        const enhancedPosts = data.posts.map((post: Post, idx: number) => ({
+          ...post,
+          aiRecommended: showAIRecommendations && idx < 3,
+          trending: idx === 0 || idx === 4,
+          author: {
+            ...post.author,
+            reputation: Math.floor(Math.random() * 2000) + 500,
+            expertBadges: idx % 3 === 0 ? ['Expert'] : []
+          }
+        }))
+        setPosts(enhancedPosts)
       }
     } catch (error) {
       console.error('Failed to fetch posts:', error)
@@ -63,16 +117,17 @@ export default function FeedPage() {
   }
 
   const categories = [
-    { value: 'all', label: 'All Posts' },
-    { value: 'question', label: 'Questions' },
-    { value: 'tutorial', label: 'Tutorials' },
-    { value: 'discussion', label: 'Discussions' }
+    { value: 'all', label: 'All Posts', icon: '📋' },
+    { value: 'question', label: 'Questions', icon: '❓' },
+    { value: 'tutorial', label: 'Tutorials', icon: '📚' },
+    { value: 'discussion', label: 'Discussions', icon: '💬' }
   ]
 
   const sortOptions = [
-    { value: 'recent', label: 'Most Recent' },
-    { value: 'popular', label: 'Most Popular' },
-    { value: 'views', label: 'Most Viewed' }
+    { value: 'smart', label: 'AI Smart Feed', icon: '🤖' },
+    { value: 'recent', label: 'Most Recent', icon: '🕒' },
+    { value: 'popular', label: 'Most Popular', icon: '🔥' },
+    { value: 'views', label: 'Most Viewed', icon: '👀' }
   ]
 
   if (!user) {

@@ -46,6 +46,17 @@ interface ChatMessage {
   aiPowered?: boolean
   webSearchEnabled?: boolean
   knowledgeBaseEnabled?: boolean
+  conversationContext?: {
+    userPreferences?: {
+      vehicleMake?: string
+      vehicleModel?: string
+      vehicleYear?: string
+      experienceLevel?: string
+    }
+    proactiveSearchesPerformed?: string[]
+    totalResultsFound?: number
+    filteredResultsCount?: number
+  }
 }
 
 export default function ChatPage() {
@@ -110,7 +121,8 @@ export default function ChatPage() {
         sources: data.sources,
         aiPowered: data.aiPowered,
         webSearchEnabled: data.webSearchEnabled,
-        knowledgeBaseEnabled: data.knowledgeBaseEnabled
+        knowledgeBaseEnabled: data.knowledgeBaseEnabled,
+        conversationContext: data.conversationContext
       }
       setMessages(prev => [...prev, aiMessage])
 
@@ -167,36 +179,47 @@ export default function ChatPage() {
                     : 'bg-gray-100 text-gray-900'
                 }`}>
                   {/* Message content */}
-                  <div className="whitespace-pre-wrap">{message.content}</div>
-                  
-                  {/* AI Response extras */}
                   {message.role === 'assistant' && (
-                    <div className="mt-3 space-y-3">
-                      
-                      {/* Sources indicator */}
-                      {message.sources && (
-                        <div className="flex items-center gap-4 text-xs bg-gray-50 rounded px-3 py-2">
-                          <span className="font-medium">Sources:</span>
-                          {message.sources.knowledge > 0 && (
-                            <span className="flex items-center gap-1 text-purple-600">
-                              🧠 Knowledge: {message.sources.knowledge}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            🗄️ Database: {message.sources.database}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            🌐 Web: {message.sources.web}
-                          </span>
-                          {message.aiPowered && (
-                            <span className="flex items-center gap-1 text-green-600">
-                              🤖 GPT-4 Turbo
-                            </span>
-                          )}
+                    <div className="space-y-4">
+                      {/* AI Response */}
+                      <div className="prose prose-sm max-w-none">
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                      </div>
+
+                      {/* Conversation Context Info */}
+                      {message.conversationContext && (
+                        <div className="bg-indigo-50 border-l-4 border-indigo-400 p-3 rounded">
+                          <h4 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
+                            🧠 Smart Context & Learning
+                          </h4>
+                          <div className="text-sm space-y-2">
+                            {message.conversationContext.userPreferences?.vehicleMake && (
+                              <p className="text-indigo-800">
+                                <span className="font-medium">Your Vehicle:</span> {message.conversationContext.userPreferences.vehicleMake} {message.conversationContext.userPreferences.vehicleModel} {message.conversationContext.userPreferences.vehicleYear}
+                              </p>
+                            )}
+                            <p className="text-indigo-800">
+                              <span className="font-medium">Experience Level:</span> {message.conversationContext.userPreferences?.experienceLevel || 'Intermediate'}
+                            </p>
+                                                         {message.conversationContext.proactiveSearchesPerformed && message.conversationContext.proactiveSearchesPerformed.length > 0 && (
+                               <div>
+                                 <p className="text-indigo-800 font-medium">🔍 Proactive Searches Performed:</p>
+                                 <ul className="list-disc list-inside text-indigo-700 text-xs ml-2">
+                                   {message.conversationContext.proactiveSearchesPerformed.map((search, idx) => (
+                                     <li key={idx}>{search}</li>
+                                   ))}
+                                 </ul>
+                               </div>
+                             )}
+                            <div className="flex gap-4 text-xs text-indigo-600">
+                              <span>📊 Found: {message.conversationContext.totalResultsFound} results</span>
+                              <span>✨ Filtered to: {message.conversationContext.filteredResultsCount} relevant</span>
+                            </div>
+                          </div>
                         </div>
                       )}
 
-                      {/* Knowledge Base Results */}
+                      {/* Expert Knowledge */}
                       {message.knowledgeBase && message.knowledgeBase.length > 0 && (
                         <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded">
                           <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
