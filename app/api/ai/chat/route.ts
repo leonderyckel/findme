@@ -435,19 +435,38 @@ export async function POST(request: NextRequest) {
     // Step 2: Search knowledge base (verified information)
     const knowledgeBase = await searchKnowledgeBase(message)
 
-    // Step 3: Search web for current parts/pricing
-    const webResults = await searchWebForParts(message)
-    
-    // Step 4: Proactive searches based on context
-    const proactiveSearches = generateProactiveSearches(message, userMemory.userPreferences)
+    // Step 3: Only do web search if query is specific enough
+    let webResults: SearchResult[] = []
     let proactiveResults: SearchResult[] = []
     
-    for (const searchQuery of proactiveSearches) {
-      try {
-        const results = await searchWebForParts(searchQuery)
-        proactiveResults.push(...results)
-      } catch (error) {
-        console.error('Proactive search error:', error)
+    // Detect if query is too vague for web search
+    const isVague = message.length < 15 ||
+                    message.toLowerCase().includes('information about') ||
+                    message.toLowerCase().includes('tell me about') ||
+                    message.toLowerCase().includes('how to install them') ||
+                    /\b(honda|toyota|bmw|ford)\s+(motors?|parts?|info)\b/i.test(message) ||
+                    /\b(want|need|looking for)\s+(info|information|help)\b/i.test(message)
+    
+    const isSpecific = /\b(brake pad|oil filter|spark plug|cam chain tensioner|alternator|starter|water pump)\b/i.test(message) ||
+                      /\b(19|20)\d{2}\b/.test(message) ||
+                      /\b(civic|accord|camry|corolla|f150|mustang|cb750)\b/i.test(message)
+    
+    let proactiveSearches: string[] = []
+    
+    if (!isVague && isSpecific) {
+      // Only search web for specific, clear queries
+      webResults = await searchWebForParts(message)
+      
+      // Step 4: Proactive searches only for specific queries
+      proactiveSearches = generateProactiveSearches(message, userMemory.userPreferences)
+      
+      for (const searchQuery of proactiveSearches) {
+        try {
+          const results = await searchWebForParts(searchQuery)
+          proactiveResults.push(...results)
+        } catch (error) {
+          console.error('Proactive search error:', error)
+        }
       }
     }
     
@@ -561,107 +580,134 @@ export async function POST(request: NextRequest) {
 function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = [], knowledgeBase: any[] = []) {
   const lowerMessage = message.toLowerCase()
   
-  // Analyze what the user is actually asking for
-  const isVague = lowerMessage.length < 10 || 
-                  ['honda', 'toyota', 'bmw', 'parts', 'help', 'info'].includes(lowerMessage.trim())
+  // Much more aggressive vague query detection
+  const isVague = 
+    lowerMessage.length < 15 || // Very short queries
+    lowerMessage.includes('information about') ||
+    lowerMessage.includes('tell me about') ||
+    lowerMessage.includes('how to install them') ||
+    lowerMessage.includes('motors') && !lowerMessage.includes('specific') ||
+    /\b(honda|toyota|bmw|ford)\s+(motors?|parts?|info)\b/i.test(message) ||
+    /\b(want|need|looking for)\s+(info|information|help)\b/i.test(message) ||
+    lowerMessage.split(' ').length < 4 && !lowerMessage.includes('tensioner') ||
+    lowerMessage.includes('how to install') && !lowerMessage.includes('brake') && !lowerMessage.includes('filter') && !lowerMessage.includes('part')
   
-  const isSpecificPart = /\b(brake|oil|filter|chain|tensioner|clutch|tire|spark plug|battery)\b/i.test(message)
-  const isSpecificProblem = /\b(problem|issue|broken|not working|noise|leak|vibrat)\b/i.test(message)
+  const isSpecificPart = /\b(brake pad|oil filter|spark plug|air filter|cam chain tensioner|clutch plate|timing belt|water pump|alternator|starter)\b/i.test(message)
+  const isSpecificProblem = /\b(won't start|making noise|overheating|leaking|grinding|squealing|rough idle)\b/i.test(message)
+  const hasVehicleDetails = /\b(19|20)\d{2}\b/.test(message) || /\b(civic|accord|camry|corolla|f150|mustang)\b/i.test(message)
   
   if (isVague) {
+    // Don't even show web results for vague queries
     return {
-      message: `Hey there! 👋
+      message: `Whoa there! 🛑
 
-You just said "${message}" - I want to help, but that's pretty broad! 
+"${message}" is way too broad for me to help effectively.
 
-Are you:
-• Looking for specific parts for a repair?
-• Trying to troubleshoot a problem?
-• Shopping for maintenance items?
-• Just browsing around?
+Here's the thing - installing Honda motors could mean:
+• Swapping an engine in a car?
+• Installing a small Honda generator motor?
+• Replacing a motor mount?
+• Something completely different?
 
-Let me know your vehicle (make, model, year) and what's going on, and I'll point you in the right direction! 
+I need to know:
+🚗 **What vehicle** are we talking about? (year, make, model)
+🔧 **What specific motor/engine** are you dealing with?
+⚙️ **What exactly** are you trying to install or fix?
+🎯 **What's the context** - is something broken, are you upgrading, etc.?
 
-I've got access to parts databases, expert guides, and current market prices - but I need to understand what you actually need first. 🔧`,
-      parts: foundParts,
-      knowledgeBase,
-      webResults,
+Give me the real details and I'll give you proper guidance instead of generic fluff! 💪`,
+      parts: [],
+      knowledgeBase: [],
+      webResults: [],
       installation: null,
-      tips: "The more specific you are about your vehicle and what you need, the better I can help you find exactly the right parts and guidance!"
+      tips: "The more specific you are, the better help I can give you. Vague questions get vague (useless) answers!"
     }
   }
 
+  // Only proceed with searches if query is specific enough
+  if (!isSpecificPart && !isSpecificProblem && !hasVehicleDetails) {
+    return {
+      message: `I can see you're asking about "${message}", but I need more specifics to really help you.
+
+What I'm missing:
+• **Specific vehicle** (year, make, model)
+• **Exact part** you're working with
+• **What problem** you're trying to solve
+
+For example, instead of "honda motors", tell me:
+• "2015 Honda Civic engine mount replacement"
+• "Honda CB750 cam chain tensioner install"
+• "Honda Accord V6 alternator removal"
+
+Give me those details and I'll find you exactly what you need! 🎯`,
+      parts: [],
+      knowledgeBase: [],
+      webResults: [],
+      installation: null,
+      tips: null
+    }
+  }
+
+  // Only show results if we actually have good, relevant data
   if (foundParts.length > 0 || webResults.length > 0 || knowledgeBase.length > 0) {
-    let responseMessage = `Got it! Looking for info on "${message}".`
-    
-    // Analyze relevance and be selective
+    // Filter out garbage results
     const relevantKnowledge = knowledgeBase.filter(kb => 
-      kb.category === 'installation_guide' || 
-      kb.usefulness_score >= 7
+      kb.category === 'installation_guide' && kb.usefulness_score >= 7 ||
+      kb.category === 'troubleshooting' && kb.usefulness_score >= 6
     )
     
     const relevantWebResults = webResults.filter(result => 
-      result.price || result.supplier === 'RockAuto' || 
-      result.title.toLowerCase().includes(lowerMessage.split(' ')[0])
+      (result.price && parseFloat(result.price.replace(/[^0-9.]/g, '')) > 5) ||
+      ['RockAuto', 'Amazon', 'AutoZone'].includes(result.supplier || '') &&
+      !result.title.toLowerCase().includes(lowerMessage.toLowerCase()) // Filter out exact query matches
     ).slice(0, 3)
     
-    // Be conversational about what we found
+    // Don't show anything if we don't have quality results
+    if (relevantKnowledge.length === 0 && relevantWebResults.length === 0 && foundParts.length === 0) {
+      return {
+        message: `I searched for "${message}" but didn't find anything specific enough to be helpful.
+
+This usually means:
+• The query is too general
+• You need to be more specific about your vehicle
+• The part/issue name might be different
+
+Try being more specific - what exact vehicle and what exact problem or part? 🎯`,
+        parts: [],
+        knowledgeBase: [],
+        webResults: [],
+        installation: null,
+        tips: null
+      }
+    }
+    
+    let responseMessage = `Got it - looking into "${message}".`
+    
     if (relevantKnowledge.length > 0) {
-      responseMessage += `\n\n💡 **Found some solid technical info:**\n`
-      responseMessage += `I've got ${relevantKnowledge.length} verified guides that look relevant. `
+      responseMessage += `\n\n💡 Found ${relevantKnowledge.length} solid technical guide(s) that actually look relevant.`
       
       if (relevantKnowledge[0].category === 'installation_guide') {
-        responseMessage += `The top one is an installation guide, which might be exactly what you need if you're planning to do this yourself.`
-      } else if (relevantKnowledge[0].category === 'troubleshooting') {
-        responseMessage += `There's a troubleshooting guide that could help diagnose what's going on.`
+        responseMessage += ` The main one is a proper installation guide - could be exactly what you need.`
       }
     }
     
     if (relevantWebResults.length > 0) {
       const pricesAvailable = relevantWebResults.filter(r => r.price)
       
-      responseMessage += `\n\n🛒 **Current market options:**\n`
-      responseMessage += `Found ${relevantWebResults.length} listings that look promising. `
+      responseMessage += `\n\n🛒 Found ${relevantWebResults.length} current listings that look legitimate.`
       
       if (pricesAvailable.length > 0) {
         const prices = pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0'))
         const lowestPrice = Math.min(...prices)
-        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
-        
-        responseMessage += `Prices range from $${lowestPrice.toFixed(2)} to $${Math.max(...prices).toFixed(2)}. `
-        
-        if (avgPrice > lowestPrice * 1.5) {
-          responseMessage += `There's quite a price spread - probably different quality levels or OEM vs aftermarket.`
-        }
+        responseMessage += ` Prices start around $${lowestPrice.toFixed(2)}.`
       }
-      
-      responseMessage += `\n\nTop picks:\n`
-      relevantWebResults.forEach((result, idx) => {
-        responseMessage += `• **${result.title}** ${result.price ? `(${result.price})` : ''}\n`
-      })
     }
     
     if (foundParts.length > 0) {
-      responseMessage += `\n\n📚 **From our parts catalog:**\n`
-      responseMessage += `Also found ${foundParts.length} catalogued parts that might work.`
+      responseMessage += `\n\n📚 Also found ${foundParts.length} parts in our catalog that might match.`
     }
     
-    // Give contextual next steps
-    if (isSpecificPart) {
-      responseMessage += `\n\n**What I'd suggest:**\n`
-      responseMessage += `• Double-check the part numbers for your specific year/model\n`
-      responseMessage += `• If you're installing it yourself, grab that technical guide\n`
-      responseMessage += `• Compare OEM vs aftermarket based on your budget and needs`
-    } else if (isSpecificProblem) {
-      responseMessage += `\n\n**Troubleshooting approach:**\n`
-      responseMessage += `• Start with the diagnostic guide if available\n`
-      responseMessage += `• Check the simple/cheap things first\n`
-      responseMessage += `• Get the right part numbers before ordering`
-    } else {
-      responseMessage += `\n\n**Next steps:**\n`
-      responseMessage += `• Let me know your specific vehicle if you want more targeted results\n`
-      responseMessage += `• Ask about installation if you're planning to DIY`
-    }
+    responseMessage += `\n\n**Next move:** Check the details below, but if this isn't what you meant, be more specific about your vehicle and what you're actually trying to do.`
     
     return {
       message: responseMessage,
@@ -669,41 +715,44 @@ I've got access to parts databases, expert guides, and current market prices - b
       knowledgeBase: relevantKnowledge,
       webResults: relevantWebResults,
       installation: relevantKnowledge.find(kb => kb.category === 'installation_guide')?.content || null,
-      tips: "Need more specific info? Just ask! I can dig deeper into installation, compatibility, or help you compare options."
+      tips: "Still not finding what you need? Be more specific about your exact vehicle and the specific part or problem."
     }
   }
   
   // Handle specific common queries with personality
   if (lowerMessage.includes('cam chain tensioner') || lowerMessage.includes('cct')) {
     return {
-      message: `Ah, cam chain tensioner issues! 😬 Those can be tricky - they're critical for timing but often fail on older bikes.
+      message: `Cam chain tensioner - now we're talking! 🔧
 
-What's going on with yours? Is it making noise, or are you just doing preventive maintenance? And what bike are we talking about?
+But I still need specifics:
+• What bike/car? (Honda CB750? Civic? Something else?)
+• What's the problem? (Noisy? Preventive maintenance?)
+• What year?
 
-CCTs can range from $50 aftermarket to $200+ OEM, and installation varies from "pretty easy" to "you'll want a shop to do it" depending on the bike.
-
-Let me know your setup and I'll point you toward the right part and approach! 🔧`,
-      ...mockResponses['cam chain tensioner'],
-      knowledgeBase,
-      webResults
+CCTs are bike/engine specific and range from $50-$200+ depending on OEM vs aftermarket. Give me the details and I'll point you to the right part and approach!`,
+      parts: [],
+      knowledgeBase: [],
+      webResults: [],
+      installation: null,
+      tips: null
     }
   }
   
-  // Default conversational response
+  // Default for truly unclear queries
   return {
-    message: `Hey! 👋 I'm here to help with automotive and motorcycle stuff.
+    message: `Hey! 👋 
 
-I didn't find specific matches for "${message}", but I've got access to:
-• Parts databases and current market prices
-• Technical guides and installation instructions  
-• Expert troubleshooting info
+I couldn't find anything useful for "${message}" - it's probably too vague or I need more context.
 
-What's your vehicle and what are you trying to accomplish? The more details you give me, the better I can help you find exactly what you need! 
+I'm good at helping with:
+• Specific parts (brake pads, oil filters, etc.)
+• Specific problems (won't start, making noise, etc.)
+• Specific vehicles (2015 Honda Civic, Honda CB750, etc.)
 
-🔧 Whether it's a specific repair, routine maintenance, or just exploring options - I'm here for it.`,
+What's your exact vehicle and what are you trying to accomplish? Give me something concrete to work with! 🔧`,
     parts: [],
-    knowledgeBase,
-    webResults,
+    knowledgeBase: [],
+    webResults: [],
     installation: null,
     tips: null
   }
