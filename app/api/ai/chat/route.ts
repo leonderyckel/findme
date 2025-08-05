@@ -243,51 +243,64 @@ async function getEnhancedAIResponse(
       ).join('\n')}`
     : ''
 
-  const systemPrompt = `You are a friendly, experienced automotive expert who loves helping people solve car and motorcycle problems. Think of yourself as the knowledgeable mechanic neighbor who always has time to explain things clearly.
+  const systemPrompt = `You are Alex, a seasoned mechanic with 15 years of experience who loves helping people with their vehicles. You're known for being direct, asking good questions, and not wasting people's time with irrelevant info.
 
-**IMPORTANT - You have conversation memory and user context:**
-- User's Vehicle: ${userPreferences.vehicleMake || 'Not specified'} ${userPreferences.vehicleModel || ''} ${userPreferences.vehicleYear || ''}
-- Experience Level: ${userPreferences.experienceLevel || 'intermediate'}
-- Past Interests: ${userPreferences.interests?.join(', ') || 'General automotive'}
+**CRITICAL: THINK BEFORE YOU SPEAK**
 
-**Your enhanced personality:**
-- Remember what the user told you before - reference previous conversation
-- Adapt your explanations to their experience level (${userPreferences.experienceLevel})
-- Be more specific since you know their vehicle type
-- Ask follow-up questions to help them better
-- Suggest related maintenance or parts they might need
-- Celebrate when you find perfect matches for their specific vehicle
+Before responding, you MUST analyze:
+1. What is the user ACTUALLY trying to accomplish?
+2. What information do they really need vs. what's just noise?
+3. What questions should I ask to help them better?
+4. Is this person looking for specific parts, general advice, or just exploring?
 
-**How to use conversation context:**
-- Reference previous messages naturally: "As we discussed earlier..." or "Building on what you mentioned about..."
-- Connect current request to past conversations
-- Suggest next logical steps based on conversation flow
-- Point out patterns or related issues from their history
+**YOUR PERSONALITY:**
+- Talk like a real person having a conversation
+- Ask follow-up questions when something's unclear
+- Don't dump information - be selective and relevant
+- React naturally: "Hmm, that's interesting..." or "Wait, let me understand..."
+- Admit when you need more context: "Hold on, what exactly are you trying to fix?"
+- Be skeptical of irrelevant results: "Most of this stuff doesn't seem related to what you need"
 
-**Enhanced search capabilities:**
-- I performed additional proactive searches based on our conversation
-- Results are now intelligently filtered and scored for relevance
-- Higher relevance scores mean better matches for your specific needs
-- I prioritize results that match your vehicle and experience level
+**CONVERSATION RULES:**
+1. **START WITH UNDERSTANDING**: If the query is vague (like just "honda"), ask what they're actually trying to do
+2. **BE SELECTIVE**: Only mention results that are genuinely helpful for their specific situation
+3. **EXPLAIN YOUR REASONING**: "I'm focusing on X because Y, but ignoring Z because it's not relevant"
+4. **ASK CLARIFYING QUESTIONS**: "Are you looking for parts for a specific problem, or just browsing?"
+5. **CONNECT THE DOTS**: Link information together logically instead of listing separately
 
-**Available data sources:**
-1. Internal parts database: ${JSON.stringify(foundParts)}
-2. Verified knowledge base (expert-reviewed): ${knowledgeText}
-3. Intelligently filtered web search results: ${webResultsText}
-4. Our conversation history: ${conversationContext}
+**USER CONTEXT:**
+- Vehicle: ${userPreferences.vehicleMake || 'Not specified'} ${userPreferences.vehicleModel || ''} ${userPreferences.vehicleYear || ''}
+- Experience: ${userPreferences.experienceLevel || 'Not specified'}
+- Past conversation: ${conversationHistory.length > 0 ? 'We\'ve been talking about automotive stuff' : 'First conversation'}
 
-**Response style - Enhanced:**
-- Start by acknowledging our ongoing conversation
-- Reference their specific vehicle when relevant
-- Explain why certain results are more relevant than others
-- Ask clarifying questions to continue the conversation
-- Suggest what to discuss next or what information would be helpful
-- Be proactive about related topics they might want to explore
+**AVAILABLE INFORMATION:**
+Knowledge Base: ${knowledgeText ? 'I have some verified technical guides' : 'No specific guides found'}
+Web Results: ${webResultsText ? 'Found some current listings and info online' : 'No current web results'}
+Database Parts: ${foundParts.length > 0 ? `Found ${foundParts.length} parts in our catalog` : 'No parts in our database match'}
 
-**Example enhanced approach:**
-"Looking at your ${userPreferences.vehicleMake || 'vehicle'}, and building on what we discussed about [previous topic], I found some interesting options. The top result has a high relevance score because it specifically matches your ${userPreferences.experienceLevel} experience level and your vehicle type..."
+**HOW TO RESPOND:**
 
-Remember: You're having an ongoing conversation with someone who trusts your expertise. Make them feel like you remember them and care about solving their specific problems.`
+BAD Example (robotic):
+"Great! I found some helpful information for your query. Let me walk you through what I discovered: 🧠 From our expert knowledge base (5 verified entries)..."
+
+GOOD Example (conversational):
+"Hmm, you just said 'honda' - that's pretty broad! Are you looking for parts for a specific Honda vehicle, trying to troubleshoot a problem, or just browsing around? 
+
+I did find some stuff, but I want to make sure I'm pointing you in the right direction. What's your Honda and what's going on with it?"
+
+**RESPONSE STRUCTURE:**
+1. **Acknowledge & Analyze**: Show you understand (or need to understand) their situation
+2. **Ask Questions**: If unclear, ask what they really need
+3. **Be Selective**: Only share the most relevant info
+4. **Explain Why**: Tell them why you're recommending specific things
+5. **Next Steps**: What should they do with this info?
+
+**CONVERSATION MEMORY:**
+${conversationHistory.length > 0 ? 
+  `Previous context: ${conversationHistory.slice(-2).map(msg => `${msg.role}: ${msg.content.substring(0, 100)}`).join(' | ')}` : 
+  'This is our first conversation'}
+
+Remember: You're having a real conversation with someone who needs help. Don't be a search engine - be a helpful human who thinks before they speak and cares about solving the actual problem.`
 
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -548,106 +561,146 @@ export async function POST(request: NextRequest) {
 function getFallbackResponse(message: string, foundParts: any[], webResults: SearchResult[] = [], knowledgeBase: any[] = []) {
   const lowerMessage = message.toLowerCase()
   
+  // Analyze what the user is actually asking for
+  const isVague = lowerMessage.length < 10 || 
+                  ['honda', 'toyota', 'bmw', 'parts', 'help', 'info'].includes(lowerMessage.trim())
+  
+  const isSpecificPart = /\b(brake|oil|filter|chain|tensioner|clutch|tire|spark plug|battery)\b/i.test(message)
+  const isSpecificProblem = /\b(problem|issue|broken|not working|noise|leak|vibrat)\b/i.test(message)
+  
+  if (isVague) {
+    return {
+      message: `Hey there! 👋
+
+You just said "${message}" - I want to help, but that's pretty broad! 
+
+Are you:
+• Looking for specific parts for a repair?
+• Trying to troubleshoot a problem?
+• Shopping for maintenance items?
+• Just browsing around?
+
+Let me know your vehicle (make, model, year) and what's going on, and I'll point you in the right direction! 
+
+I've got access to parts databases, expert guides, and current market prices - but I need to understand what you actually need first. 🔧`,
+      parts: foundParts,
+      knowledgeBase,
+      webResults,
+      installation: null,
+      tips: "The more specific you are about your vehicle and what you need, the better I can help you find exactly the right parts and guidance!"
+    }
+  }
+
   if (foundParts.length > 0 || webResults.length > 0 || knowledgeBase.length > 0) {
-    let responseMessage = `Great! I found some helpful information for your query. Let me walk you through what I discovered:`
+    let responseMessage = `Got it! Looking for info on "${message}".`
     
-    // Knowledge base findings
-    if (knowledgeBase.length > 0) {
-      responseMessage += `\n\n🧠 **From our expert knowledge base** (${knowledgeBase.length} verified entries):`
+    // Analyze relevance and be selective
+    const relevantKnowledge = knowledgeBase.filter(kb => 
+      kb.category === 'installation_guide' || 
+      kb.usefulness_score >= 7
+    )
+    
+    const relevantWebResults = webResults.filter(result => 
+      result.price || result.supplier === 'RockAuto' || 
+      result.title.toLowerCase().includes(lowerMessage.split(' ')[0])
+    ).slice(0, 3)
+    
+    // Be conversational about what we found
+    if (relevantKnowledge.length > 0) {
+      responseMessage += `\n\n💡 **Found some solid technical info:**\n`
+      responseMessage += `I've got ${relevantKnowledge.length} verified guides that look relevant. `
       
-      const topKnowledge = knowledgeBase[0]
-      responseMessage += `\n\nThe most relevant entry is about "${topKnowledge.title}" - this comes from our verified sources with a reliability score of ${topKnowledge.sources?.[0]?.reliability_score || 'high'}/10. `
-      
-      if (topKnowledge.category === 'installation_guide') {
-        responseMessage += `Since this is an installation guide, you can trust these step-by-step instructions.`
-      } else if (topKnowledge.category === 'troubleshooting') {
-        responseMessage += `This troubleshooting guide has helped other users resolve similar issues.`
-      } else if (topKnowledge.category === 'safety_warning') {
-        responseMessage += `Important: This contains safety information you'll want to review before proceeding.`
+      if (relevantKnowledge[0].category === 'installation_guide') {
+        responseMessage += `The top one is an installation guide, which might be exactly what you need if you're planning to do this yourself.`
+      } else if (relevantKnowledge[0].category === 'troubleshooting') {
+        responseMessage += `There's a troubleshooting guide that could help diagnose what's going on.`
       }
     }
     
-    // Web results findings
-    if (webResults.length > 0) {
-      responseMessage += `\n\n🛒 **Current market options** (${webResults.length} live listings):`
+    if (relevantWebResults.length > 0) {
+      const pricesAvailable = relevantWebResults.filter(r => r.price)
       
-      const topResults = webResults.slice(0, 3)
-      const pricesAvailable = topResults.filter(r => r.price)
+      responseMessage += `\n\n🛒 **Current market options:**\n`
+      responseMessage += `Found ${relevantWebResults.length} listings that look promising. `
       
       if (pricesAvailable.length > 0) {
-        const lowestPrice = Math.min(...pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0')))
-        const highestPrice = Math.max(...pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0')))
+        const prices = pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0'))
+        const lowestPrice = Math.min(...prices)
+        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
         
-        responseMessage += `\n\nPrice range I found: ${lowestPrice.toFixed(2)} to ${highestPrice.toFixed(2)}. `
+        responseMessage += `Prices range from $${lowestPrice.toFixed(2)} to $${Math.max(...prices).toFixed(2)}. `
         
-        if (highestPrice / lowestPrice > 1.5) {
-          responseMessage += `There's quite a price spread here - the higher-priced options might be OEM or premium quality, while lower prices could be aftermarket alternatives.`
+        if (avgPrice > lowestPrice * 1.5) {
+          responseMessage += `There's quite a price spread - probably different quality levels or OEM vs aftermarket.`
         }
       }
       
-      responseMessage += `\n\nTop recommendations:\n`
-      topResults.forEach((result, idx) => {
-        responseMessage += `• **${result.title}** from ${result.supplier}${result.price ? ` (${result.price})` : ''}\n`
-        if (idx === 0 && result.description) {
-          responseMessage += `  └ ${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''}\n`
-        }
+      responseMessage += `\n\nTop picks:\n`
+      relevantWebResults.forEach((result, idx) => {
+        responseMessage += `• **${result.title}** ${result.price ? `(${result.price})` : ''}\n`
       })
     }
     
-    // Database parts
     if (foundParts.length > 0) {
-      responseMessage += `\n\n📚 **From our parts database** (${foundParts.length} catalogued parts):`
-      responseMessage += `\n\nI also found ${foundParts.length} matching parts in our internal database. These are parts we've catalogued and verified for compatibility.`
+      responseMessage += `\n\n📚 **From our parts catalog:**\n`
+      responseMessage += `Also found ${foundParts.length} catalogued parts that might work.`
     }
     
-    // Next steps
-    responseMessage += `\n\n**What I'd suggest next:**`
-    
-    if (webResults.length > 0) {
-      responseMessage += `\n• Check out the top listings above - I'd start with the ${webResults[0].supplier} option`
+    // Give contextual next steps
+    if (isSpecificPart) {
+      responseMessage += `\n\n**What I'd suggest:**\n`
+      responseMessage += `• Double-check the part numbers for your specific year/model\n`
+      responseMessage += `• If you're installing it yourself, grab that technical guide\n`
+      responseMessage += `• Compare OEM vs aftermarket based on your budget and needs`
+    } else if (isSpecificProblem) {
+      responseMessage += `\n\n**Troubleshooting approach:**\n`
+      responseMessage += `• Start with the diagnostic guide if available\n`
+      responseMessage += `• Check the simple/cheap things first\n`
+      responseMessage += `• Get the right part numbers before ordering`
+    } else {
+      responseMessage += `\n\n**Next steps:**\n`
+      responseMessage += `• Let me know your specific vehicle if you want more targeted results\n`
+      responseMessage += `• Ask about installation if you're planning to DIY`
     }
-    if (knowledgeBase.length > 0) {
-      const installGuide = knowledgeBase.find(kb => kb.category === 'installation_guide')
-      if (installGuide) {
-        responseMessage += `\n• Review the installation guide below - it'll help you understand what you're getting into`
-      }
-    }
-    responseMessage += `\n• Double-check compatibility with your specific vehicle year and model before ordering`
     
     return {
       message: responseMessage,
       parts: foundParts,
-      knowledgeBase,
-      webResults,
-      installation: knowledgeBase.find(kb => kb.category === 'installation_guide')?.content || 
-                   "I'd recommend checking your vehicle's service manual for specific installation procedures. Every model can have its quirks!",
-      tips: knowledgeBase.find(kb => kb.category === 'safety_warning')?.content || 
-           "Always use quality parts and follow proper torque specifications. When in doubt, have a professional double-check your work - safety first!"
+      knowledgeBase: relevantKnowledge,
+      webResults: relevantWebResults,
+      installation: relevantKnowledge.find(kb => kb.category === 'installation_guide')?.content || null,
+      tips: "Need more specific info? Just ask! I can dig deeper into installation, compatibility, or help you compare options."
     }
   }
   
-  // Handle specific queries with mock responses
+  // Handle specific common queries with personality
   if (lowerMessage.includes('cam chain tensioner') || lowerMessage.includes('cct')) {
     return {
-      message: `Ah, cam chain tensioner issues! That's a common concern, especially on older bikes. Let me search for current pricing and verified guidance for you. The CCT is crucial for maintaining proper timing, so you'll want to get this sorted out properly.`,
+      message: `Ah, cam chain tensioner issues! 😬 Those can be tricky - they're critical for timing but often fail on older bikes.
+
+What's going on with yours? Is it making noise, or are you just doing preventive maintenance? And what bike are we talking about?
+
+CCTs can range from $50 aftermarket to $200+ OEM, and installation varies from "pretty easy" to "you'll want a shop to do it" depending on the bike.
+
+Let me know your setup and I'll point you toward the right part and approach! 🔧`,
       ...mockResponses['cam chain tensioner'],
       knowledgeBase,
       webResults
     }
   }
   
-  // Default helpful response
+  // Default conversational response
   return {
-    message: `I'd love to help you find the right parts! 🔧 
+    message: `Hey! 👋 I'm here to help with automotive and motorcycle stuff.
 
-To give you the most accurate recommendations, could you share a bit more about:
-• Your vehicle details (make, model, year)
-• The specific part or problem you're dealing with
-• Whether you're planning to install it yourself or have a shop do it
+I didn't find specific matches for "${message}", but I've got access to:
+• Parts databases and current market prices
+• Technical guides and installation instructions  
+• Expert troubleshooting info
 
-With those details, I can search our expert knowledge base, current market listings, and parts database to find exactly what you need. I'm here to make sure you get the right part at a good price! 
+What's your vehicle and what are you trying to accomplish? The more details you give me, the better I can help you find exactly what you need! 
 
-What's going on with your ride?`,
+🔧 Whether it's a specific repair, routine maintenance, or just exploring options - I'm here for it.`,
     parts: [],
     knowledgeBase,
     webResults,
