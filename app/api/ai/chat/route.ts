@@ -102,7 +102,7 @@ function extractUserPreferences(messages: any[]): any {
   }
   
   // Enhanced model detection
-  const modelRegex = /\b(civic|accord|camry|corolla|f150|f-150|mustang|focus|fiesta|explorer|cb750|cb650|cb500|cbr|ninja|gsxr|r6|r1|m3|m5|x3|x5|3 series|5 series|e46|e90|e92|prius|rav4|highlander|pilot|crv|cr-v|hrv|hr-v)\b/gi
+  const modelRegex = /\b(civic|accord|camry|corolla|f150|f-150|mustang|focus|fiesta|explorer|cb750|cb650|cb500|cbr|ninja|gsxr|r6|r1|m3|m5|x3|x5|3 series|5 series|e46|e90|e92|prius|rav4|highlander|pilot|crv|cr-v|hrv|hr-v|wrx|sti|legacy|outback|forester|impreza|brz)\b/gi
   const modelMatches = allText.match(modelRegex)
   if (modelMatches) {
     preferences.vehicleModel = modelMatches[modelMatches.length - 1] // Use the most recent mention
@@ -451,16 +451,16 @@ export async function POST(request: NextRequest) {
     let proactiveResults: SearchResult[] = []
     
     // Detect if query is too vague for web search
-    const isVague = message.length < 15 ||
-                    message.toLowerCase().includes('information about') ||
-                    message.toLowerCase().includes('tell me about') ||
-                    message.toLowerCase().includes('how to install them') ||
-                    /\b(honda|toyota|bmw|ford)\s+(motors?|parts?|info)\b/i.test(message) ||
-                    /\b(want|need|looking for)\s+(info|information|help)\b/i.test(message)
+    const isVague = message.length < 10 ||  // Only extremely short queries
+                    message.toLowerCase().includes('information about') && message.length < 50 ||  // Only short "info about" requests
+                    message.toLowerCase().includes('tell me about') && message.length < 50 ||     // Only short "tell me" requests
+                    /\b(honda|toyota|bmw|ford)\s+(motors?|parts?|info)$\b/i.test(message) ||     // Only if it ENDS with these generic terms
+                    /^(want|need|looking for)\s+(info|information|help)$/i.test(message.trim())    // Only standalone requests
     
-    const isSpecific = /\b(brake pad|oil filter|spark plug|cam chain tensioner|alternator|starter|water pump)\b/i.test(message) ||
+    const isSpecific = /\b(brake pad|oil filter|spark plug|cam chain tensioner|alternator|starter|water pump|boost control|solenoid|ebcs|turbo|intercooler|downpipe)\b/i.test(message) ||
                       /\b(19|20)\d{2}\b/.test(message) ||
-                      /\b(civic|accord|camry|corolla|f150|mustang|cb750)\b/i.test(message)
+                      /\b(civic|accord|camry|corolla|f150|mustang|cb750|wrx|sti|subaru|bmw|audi|mercedes|lexus|acura)\b/i.test(message) ||
+                      message.length > 100  // Long detailed messages are probably specific
     
     // Allow follow-up questions if we have conversation context
     const isFollowUpQuestion = /\b(tips|advice|help|guide|how to|install|replace|fix)\b/i.test(message) && 
@@ -471,7 +471,7 @@ export async function POST(request: NextRequest) {
                                   (userMemory.userPreferences.vehicleMake || 
                                    userMemory.searchHistory.some(search => 
                                      /\b(19|20)\d{2}\b/.test(search) || 
-                                     /\b(civic|accord|cb750|m3|camry)\b/i.test(search)
+                                     /\b(civic|accord|cb750|m3|camry|wrx|sti|subaru|bmw|audi|mercedes|lexus|acura)\b/i.test(search)
                                    ))
     
     let proactiveSearches: string[] = []
@@ -605,19 +605,16 @@ function getFallbackResponse(message: string, foundParts: any[], webResults: Sea
   
   // Much more aggressive vague query detection, but consider conversation context
   const isVague = 
-    lowerMessage.length < 15 || // Very short queries
-    lowerMessage.includes('information about') ||
-    lowerMessage.includes('tell me about') ||
-    lowerMessage.includes('how to install them') ||
-    lowerMessage.includes('motors') && !lowerMessage.includes('specific') ||
-    /\b(honda|toyota|bmw|ford)\s+(motors?|parts?|info)\b/i.test(message) ||
-    /\b(want|need|looking for)\s+(info|information|help)\b/i.test(message) ||
-    lowerMessage.split(' ').length < 4 && !lowerMessage.includes('tensioner') ||
-    lowerMessage.includes('how to install') && !lowerMessage.includes('brake') && !lowerMessage.includes('filter') && !lowerMessage.includes('part')
+    lowerMessage.length < 8 || // Only very short queries
+    lowerMessage.includes('information about') && lowerMessage.length < 30 ||
+    lowerMessage.includes('tell me about') && lowerMessage.length < 30 ||
+    lowerMessage === 'honda motors' || lowerMessage === 'toyota parts' || // Exact simple matches only
+    /^(want|need|looking for)\s+(info|information|help)$/i.test(message.trim()) ||  // Only standalone requests
+    (lowerMessage.split(' ').length < 3 && !lowerMessage.includes('tensioner') && !lowerMessage.includes('solenoid') && !lowerMessage.includes('ebcs'))  // Very short without specific parts
 
-  const isSpecificPart = /\b(brake pad|oil filter|spark plug|air filter|cam chain tensioner|clutch plate|timing belt|water pump|alternator|starter)\b/i.test(message)
-  const isSpecificProblem = /\b(won't start|making noise|overheating|leaking|grinding|squealing|rough idle)\b/i.test(message)
-  const hasVehicleDetails = /\b(19|20)\d{2}\b/.test(message) || /\b(civic|accord|camry|corolla|f150|mustang|cb750|m3|m1)\b/i.test(message)
+  const isSpecificPart = /\b(brake pad|oil filter|spark plug|air filter|cam chain tensioner|clutch plate|timing belt|water pump|alternator|starter|boost control|solenoid|ebcs|turbo|intercooler|downpipe)\b/i.test(message)
+  const isSpecificProblem = /\b(won't start|making noise|overheating|leaking|grinding|squealing|rough idle|boost spikes|inconsistent boost)\b/i.test(message)
+  const hasVehicleDetails = /\b(19|20)\d{2}\b/.test(message) || /\b(civic|accord|camry|corolla|f150|mustang|cb750|m3|m1|wrx|sti|subaru|bmw|audi|mercedes|lexus|acura|hatchback)\b/i.test(message)
   
   // Check for follow-up questions (tips, advice, etc.)
   const isFollowUpRequest = /\b(tips|advice|help|guide|more info|tell me more)\b/i.test(message)
@@ -741,98 +738,68 @@ Give me the real details and I'll give you proper guidance instead of generic fl
     }
   }
 
-  // Only proceed with searches if query is specific enough
-  if (!isSpecificPart && !isSpecificProblem && !hasVehicleDetails) {
+  // If we get here, the query was specific but didn't find good results
+  if (isSpecificPart || isSpecificProblem || hasVehicleDetails || message.length > 50) {
     return {
-      message: `I can see you're asking about "${message}", but I need more specifics to really help you.
+      message: `I can see you're looking for specific help, but I didn't find great results in my current databases.
 
-What I'm missing:
-• **Specific vehicle** (year, make, model)
-• **Exact part** you're working with
-• **What problem** you're trying to solve
+**Your query looks detailed and specific** - that's good! The issue might be:
+• **Limited search results** - try different part names or model numbers
+• **Regional availability** - some parts might not be available in your area  
+• **Timing** - new or rare parts might take longer to find
 
-For example, instead of "honda motors", tell me:
-• "2015 Honda Civic engine mount replacement"
-• "Honda CB750 cam chain tensioner install"
-• "Honda Accord V6 alternator removal"
+**What I'd suggest:**
+🔍 **Try alternative search terms** - different part numbers, brand names, or descriptions
+🌐 **Check specialized forums** - vehicle-specific communities often have the best info
+🛒 **Contact dealers directly** - they might have parts not listed online
+📱 **Try mobile apps** - some part suppliers have better mobile catalogs
 
-Give me those details and I'll find you exactly what you need! 🎯`,
-      parts: [],
-      knowledgeBase: [],
-      webResults: [],
-      installation: null,
-      tips: null
-    }
-  }
-
-  // Only show results if we actually have good, relevant data
-  if (foundParts.length > 0 || webResults.length > 0 || knowledgeBase.length > 0) {
-    // Filter out garbage results
-    const relevantKnowledge = knowledgeBase.filter(kb => 
-      kb.category === 'installation_guide' && kb.usefulness_score >= 7 ||
-      kb.category === 'troubleshooting' && kb.usefulness_score >= 6
-    )
-    
-    const relevantWebResults = webResults.filter(result => 
-      (result.price && parseFloat(result.price.replace(/[^0-9.]/g, '')) > 5) ||
-      ['RockAuto', 'Amazon', 'AutoZone'].includes(result.supplier || '') &&
-      !result.title.toLowerCase().includes(lowerMessage.toLowerCase()) // Filter out exact query matches
-    ).slice(0, 3)
-    
-    // Don't show anything if we don't have quality results
-    if (relevantKnowledge.length === 0 && relevantWebResults.length === 0 && foundParts.length === 0) {
-      return {
-        message: `I searched for "${message}" but didn't find anything specific enough to be helpful.
-
-This usually means:
-• The query is too general
-• You need to be more specific about your vehicle
-• The part/issue name might be different
-
-Try being more specific - what exact vehicle and what exact problem or part? 🎯`,
-        parts: [],
-        knowledgeBase: [],
-        webResults: [],
-        installation: null,
-        tips: null
-      }
-    }
-    
-    let responseMessage = `Got it - looking into "${message}".`
-    
-    if (relevantKnowledge.length > 0) {
-      responseMessage += `\n\n💡 Found ${relevantKnowledge.length} solid technical guide(s) that actually look relevant.`
-      
-      if (relevantKnowledge[0].category === 'installation_guide') {
-        responseMessage += ` The main one is a proper installation guide - could be exactly what you need.`
-      }
-    }
-    
-    if (relevantWebResults.length > 0) {
-      const pricesAvailable = relevantWebResults.filter(r => r.price)
-      
-      responseMessage += `\n\n🛒 Found ${relevantWebResults.length} current listings that look legitimate.`
-      
-      if (pricesAvailable.length > 0) {
-        const prices = pricesAvailable.map(r => parseFloat(r.price?.replace(/[^0-9.]/g, '') || '0'))
-        const lowestPrice = Math.min(...prices)
-        responseMessage += ` Prices start around $${lowestPrice.toFixed(2)}.`
-      }
-    }
-    
-    if (foundParts.length > 0) {
-      responseMessage += `\n\n📚 Also found ${foundParts.length} parts in our catalog that might match.`
-    }
-    
-    responseMessage += `\n\n**Next move:** Check the details below, but if this isn't what you meant, be more specific about your vehicle and what you're actually trying to do.`
-    
-    return {
-      message: responseMessage,
+Want to try rephrasing your search or need help finding the right resources? 🎯`,
       parts: foundParts,
-      knowledgeBase: relevantKnowledge,
-      webResults: relevantWebResults,
-      installation: relevantKnowledge.find(kb => kb.category === 'installation_guide')?.content || null,
-      tips: "Still not finding what you need? Be more specific about your exact vehicle and the specific part or problem."
+      knowledgeBase,
+      webResults,
+      installation: `**When You Do Find the Right Part:**
+
+1. **Verify Compatibility:**
+   - Double-check part numbers against your vehicle's VIN
+   - Confirm year, trim level, and engine specifications
+   - Look for any special installation requirements
+
+2. **Preparation:**
+   - Read through any available installation guides first
+   - Gather all necessary tools before starting
+   - Plan for proper disposal of old parts
+
+3. **Installation Best Practices:**
+   - Take photos before disassembly
+   - Work in good lighting with proper safety equipment
+   - Don't force anything - if it doesn't fit easily, double-check compatibility
+
+4. **Testing:**
+   - Test functionality before fully reassembling
+   - Check for leaks, proper connections, or unusual noises
+   - Monitor performance for the first few drives`,
+      tips: `**For Hard-to-Find Parts:**
+
+🎯 **Search Strategy:**
+- Use multiple search terms and part numbers
+- Check both OEM and aftermarket suppliers
+- Look at similar model years or trim levels
+
+🔧 **Alternative Sources:**
+- Salvage yards for discontinued parts
+- Aftermarket specialists for performance upgrades
+- Import specialists for JDM or European parts
+
+💡 **Community Resources:**
+- Vehicle-specific Facebook groups
+- Reddit communities (r/cars, r/MechanicAdvice)
+- Manufacturer forums and owner clubs
+
+⚠️ **Quality Considerations:**
+- Read reviews before buying from unknown suppliers
+- Verify return policies for expensive parts
+- Consider professional installation for complex components`
     }
   }
   
@@ -855,22 +822,20 @@ CCTs are bike/engine specific and range from $50-$200+ depending on OEM vs after
     }
   }
   
-  // Default for truly unclear queries
+  // General fallback for queries that don't fit other patterns
   return {
-    message: `Hey! 👋 
+    message: `I see you're asking about "${message}" but I'm not quite sure how to help best.
 
-I couldn't find anything useful for "${message}" - it's probably too vague or I need more context.
+Could you help me understand:
+🚗 **What vehicle** are you working with? (year, make, model)
+🔧 **What specific part or problem** are you dealing with?
+🎯 **What's your goal** - are you troubleshooting, upgrading, or maintaining?
 
-I'm good at helping with:
-• Specific parts (brake pads, oil filters, etc.)
-• Specific problems (won't start, making noise, etc.)
-• Specific vehicles (2015 Honda Civic, Honda CB750, etc.)
-
-What's your exact vehicle and what are you trying to accomplish? Give me something concrete to work with! 🔧`,
-    parts: [],
-    knowledgeBase: [],
-    webResults: [],
+The more details you give me, the better I can point you in the right direction! 🛠️`,
+    parts: foundParts,
+    knowledgeBase,
+    webResults,
     installation: null,
-    tips: null
+    tips: "Feel free to be as specific as possible - I work best with detailed questions!"
   }
 } 
